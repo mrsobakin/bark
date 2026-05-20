@@ -1,0 +1,3 @@
+[workspace]
+members = ["bark-core", "bark-jni"]
+resolver = "2"
