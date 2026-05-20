@@ -1,48 +1,35 @@
-//! JNI bindings for `bark-core`.
-//!
-//! Exposes a `com.mrsobakin.bark.BarkPipeline` class with the following native
-//! methods:
-//!
-//! ```java
-//! class BarkPipeline {
-//!     static native long nativeCreate(String configJson);
-//!     static native void nativeDestroy(long handle);
-//!     native void pushAudio(short[] frames);
-//!     native String finalize();
-//! }
-//! ```
-
 use jni::objects::JClass;
 use jni::sys::{jlong, jshortArray, jstring};
 use jni::JNIEnv;
 
 use bark_core::{Bark, BarkConfig};
 
-struct BarkInner {
-    bark: Bark,
+fn box_handle(bark: Bark) -> jlong {
+    Box::into_raw(Box::new(bark)) as jlong
 }
 
-unsafe impl Send for BarkInner {}
-
-fn box_handle(inner: BarkInner) -> jlong {
-    Box::into_raw(Box::new(inner)) as jlong
-}
-
-fn deref_handle(handle: jlong) -> &'static mut BarkInner {
-    unsafe { &mut *(handle as *mut BarkInner) }
+fn deref_handle(handle: jlong) -> &'static mut Bark {
+    unsafe { &mut *(handle as *mut Bark) }
 }
 
 fn drop_handle(handle: jlong) {
     unsafe {
-        let _ = Box::from_raw(handle as *mut BarkInner);
+        let _ = Box::from_raw(handle as *mut Bark);
     }
+}
+
+fn throw_illegal_argument(env: &mut JNIEnv, msg: &str) {
+    let _ = env.throw_new("java/lang/IllegalArgumentException", msg);
+}
+
+fn throw_illegal_state(env: &mut JNIEnv, msg: &str) {
+    let _ = env.throw_new("java/lang/IllegalStateException", msg);
 }
 
 // ---------------------------------------------------------------------------
 // JNI entry points
 // ---------------------------------------------------------------------------
 
-/// # Safety
 /// `config_json` must be a valid JNI string reference.
 #[no_mangle]
 pub unsafe extern "system" fn Java_com_mrsobakin_bark_BarkPipeline_nativeCreate(
@@ -68,12 +55,13 @@ pub unsafe extern "system" fn Java_com_mrsobakin_bark_BarkPipeline_nativeCreate(
         }
     };
 
-    let bark = Bark::new(config);
-    let inner = BarkInner { bark };
-    box_handle(inner)
+    let Ok(bark) = Bark::new(config) else {
+        return 0;
+    };
+
+    box_handle(bark)
 }
 
-/// # Safety
 /// `handle` must be a valid pointer returned by `nativeCreate`, or 0.
 #[no_mangle]
 pub unsafe extern "system" fn Java_com_mrsobakin_bark_BarkPipeline_nativeDestroy(
@@ -86,7 +74,6 @@ pub unsafe extern "system" fn Java_com_mrsobakin_bark_BarkPipeline_nativeDestroy
     }
 }
 
-/// # Safety
 /// `handle` must be a valid pointer. `frames` must be a valid JNI short array.
 #[no_mangle]
 pub unsafe extern "system" fn Java_com_mrsobakin_bark_BarkPipeline_nativePushAudio(
@@ -110,16 +97,14 @@ pub unsafe extern "system" fn Java_com_mrsobakin_bark_BarkPipeline_nativePushAud
     }
 
     let mut buf = vec![0i16; len];
-    env.get_short_array_region(&jarray, 0, &mut buf).unwrap_or_else(|e| {
-        eprintln!("bark-jni: get_short_array_region failed: {e}");
-    });
+    env.get_short_array_region(&jarray, 0, &mut buf)
+        .unwrap_or_else(|e| {
+            eprintln!("bark-jni: get_short_array_region failed: {e}");
+        });
 
-    inner.bark.push_audio(&buf);
+    inner.push_audio(&buf);
 }
 
-/// # Safety
-/// `handle` must be a valid pointer. After this call, `handle` is consumed
-/// and must not be used again.
 #[no_mangle]
 pub unsafe extern "system" fn Java_com_mrsobakin_bark_BarkPipeline_nativeFinalize(
     mut env: JNIEnv,
@@ -131,9 +116,9 @@ pub unsafe extern "system" fn Java_com_mrsobakin_bark_BarkPipeline_nativeFinaliz
         return std::ptr::null_mut();
     }
 
-    let inner = Box::from_raw(handle as *mut BarkInner);
+    let mut bark = Box::from_raw(handle as *mut Bark);
 
-    match inner.bark.finalize() {
+    match bark.finalize() {
         Ok(text) => match env.new_string(&text) {
             Ok(js) => js.into_raw(),
             Err(_) => std::ptr::null_mut(),
@@ -143,16 +128,4 @@ pub unsafe extern "system" fn Java_com_mrsobakin_bark_BarkPipeline_nativeFinaliz
             std::ptr::null_mut()
         }
     }
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-fn throw_illegal_argument(env: &mut JNIEnv, msg: &str) {
-    let _ = env.throw_new("java/lang/IllegalArgumentException", msg);
-}
-
-fn throw_illegal_state(env: &mut JNIEnv, msg: &str) {
-    let _ = env.throw_new("java/lang/IllegalStateException", msg);
 }

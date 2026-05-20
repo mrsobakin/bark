@@ -1,28 +1,24 @@
-//! Whisper-compatible transcription engine (Groq / OpenAI API).
-
 use crate::config::EngineConfig;
-use crate::error::{BarkError, Result};
-use reqwest::multipart;
+use crate::engine::{TranscriptionEngine, TranscriptionError};
+use reqwest::blocking::multipart;
 
-/// HTTP-based transcription client for any Whisper-compatible endpoint.
 pub struct WhisperClient {
-    http: reqwest::Client,
+    http: reqwest::blocking::Client,
     config: EngineConfig,
 }
 
 impl WhisperClient {
-    pub fn new(config: EngineConfig) -> Self {
-        let http = reqwest::Client::builder()
+    pub fn new(config: &EngineConfig) -> Result<Self, TranscriptionError> {
+        let http = reqwest::blocking::Client::builder()
             .timeout(std::time::Duration::from_secs(60))
-            .build()
-            .expect("failed to build HTTP client");
-
-        Self { http, config }
+            .build()?;
+        let config = config.clone();
+        Ok(Self { http, config })
     }
+}
 
-    /// Send `ogg_data` (a complete OGG/Opus file) to the transcription
-    /// endpoint and return the transcribed text.
-    pub async fn transcribe(&self, ogg_data: &[u8]) -> Result<String> {
+impl TranscriptionEngine for WhisperClient {
+    fn transcribe(&self, ogg_data: &[u8]) -> Result<String, TranscriptionError> {
         if ogg_data.is_empty() {
             return Ok(String::new());
         }
@@ -30,7 +26,7 @@ impl WhisperClient {
         let file_part = multipart::Part::bytes(ogg_data.to_vec())
             .file_name("audio.ogg".to_string())
             .mime_str("audio/ogg")
-            .map_err(|e| BarkError::Transcription(format!("invalid MIME: {e}")))?;
+            .map_err(|e| TranscriptionError(format!("invalid MIME: {e}")))?;
 
         let mut form = multipart::Form::new()
             .part("file", file_part)
@@ -50,19 +46,21 @@ impl WhisperClient {
             req = req.bearer_auth(&self.config.api_key);
         }
 
-        let resp = req.send().await.map_err(BarkError::Http)?;
+        let resp = req.send()?;
 
         if !resp.status().is_success() {
             let status = resp.status();
-            let body = resp.text().await.unwrap_or_default();
-            let snippet: String = body.chars().take(200).collect();
-            let snippet = snippet.replace('\n', " ");
-            return Err(BarkError::Transcription(format!(
+
+            let mut body = resp.text().unwrap_or_default();
+            body.truncate(200);
+            let snippet = body.replace('\n', " ");
+
+            return Err(TranscriptionError(format!(
                 "HTTP {status}: {snippet}"
             )));
         }
 
-        let text = resp.text().await.map_err(BarkError::Http)?;
+        let text = resp.text()?;
         Ok(text.trim().to_string())
     }
 }

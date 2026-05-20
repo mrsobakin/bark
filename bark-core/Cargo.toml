@@ -4,19 +4,11 @@ version = "0.1.0"
 edition = "2021"
 description = "Speech-to-text pipeline: VAD + AGC + Opus encoding + Whisper API + post-processing"
 
-[features]
-default = ["vad-silero"]
-vad-silero = ["ort"]
-
 [dependencies]
 thiserror = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tokio = { version = "1", features = ["rt", "rt-multi-thread"] }
-reqwest = { version = "0.12", default-features = false, features = ["multipart", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["multipart", "rustls-tls", "blocking"] }
 opus = "0.3"
-regex = "1"
-rand = "0.9"
-
-# VAD backends
-ort = { version = "2.0.0-rc.12", optional = true }
+ogg = "0.9"
+ort = "2.0.0-rc.12"

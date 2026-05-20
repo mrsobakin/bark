@@ -1,23 +1,33 @@
-//! `bark-core` – speech-to-text pipeline library.
-//!
-//! The primary entry point is [`Bark`]: push raw audio frames, then finalise
-//! to receive the transcribed text.
-
+mod audio;
 mod bark;
 mod config;
-mod error;
-mod ogg_opus;
-mod postprocessor;
-mod preprocessor;
-mod vad;
-mod whisper;
+mod engine;
+mod post;
+mod pre;
+mod util;
 
-pub use bark::Bark;
-pub use config::{
-    AgcConfig, BarkConfig, DeEmdasherConfig, EngineConfig, PostConfig, PreConfig, VadConfig,
-};
-pub use error::{BarkError, Result};
-pub use vad::{EnergyVad, VadProcessor, VoiceDetector, VAD_FRAME_SAMPLES};
+#[derive(Debug, thiserror::Error)]
+pub enum BarkError {
+    #[error("Ogg/Opus muxing error: {0}")]
+    Encoding(#[from] crate::audio::EncodeError),
 
-#[cfg(feature = "vad-silero")]
-pub use vad::SileroVad;
+    #[error("VAD error: {0}")]
+    Vad(#[from] crate::pre::vad::VadError),
+
+    #[error("HTTP request error: {0}")]
+    Http(#[from] reqwest::Error),
+
+    #[error("Transcription failed: {0}")]
+    Transcription(#[from] crate::engine::TranscriptionError),
+
+    #[error("Configuration error: {0}")]
+    Config(String),
+}
+
+pub type Result<T> = std::result::Result<T, BarkError>;
+
+pub use bark::*;
+pub use config::*;
+pub use pre::*;
+pub use post::*;
+pub use engine::*;
