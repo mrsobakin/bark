@@ -1,8 +1,7 @@
 [package]
 name = "bark-core"
-version = "0.1.0"
-edition = "2021"
-description = "Speech-to-text pipeline: VAD + AGC + Opus encoding + Whisper API + post-processing"
+version.workspace = true
+edition.workspace = true
 
 [dependencies]
 thiserror = "2"

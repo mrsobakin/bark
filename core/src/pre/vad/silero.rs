@@ -49,8 +49,10 @@ impl SileroVad {
         ))?;
 
         let sr_val = Tensor::from_array((vec![1i64], vec![16000i64].into_boxed_slice()))?;
-        let h_val = Tensor::from_array((vec![2i64, 1i64, 64i64], self.h.clone().into_boxed_slice()))?;
-        let c_val = Tensor::from_array((vec![2i64, 1i64, 64i64], self.c.clone().into_boxed_slice()))?;
+        let h_val =
+            Tensor::from_array((vec![2i64, 1i64, 64i64], self.h.clone().into_boxed_slice()))?;
+        let c_val =
+            Tensor::from_array((vec![2i64, 1i64, 64i64], self.c.clone().into_boxed_slice()))?;
 
         let result = self
             .session
@@ -93,9 +95,7 @@ mod tests {
 
     #[test]
     fn smoke() {
-        let mut vad = SileroVad::load().unwrap_or_else(|err| {
-            panic!("vad fails to load: {err}")
-        });
+        let mut vad = SileroVad::load().unwrap_or_else(|err| panic!("vad fails to load: {err}"));
 
         let frame = [0i16; VAD_FRAME_SAMPLES];
 

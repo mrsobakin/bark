@@ -10,14 +10,12 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
 fn main() -> anyhow::Result<()> {
     // -- configuration (from environment) -----------------------------------
-    let api_key = std::env::var("GROQ_API_KEY")
-        .context("GROQ_API_KEY environment variable must be set")?;
+    let api_key =
+        std::env::var("GROQ_API_KEY").context("GROQ_API_KEY environment variable must be set")?;
 
-    let endpoint = std::env::var("BARK_ENDPOINT").unwrap_or_else(|_| {
-        "https://api.groq.com/openai/v1/audio/transcriptions".into()
-    });
-    let model = std::env::var("BARK_MODEL")
-        .unwrap_or_else(|_| "whisper-large-v3-turbo".into());
+    let endpoint = std::env::var("BARK_ENDPOINT")
+        .unwrap_or_else(|_| "https://api.groq.com/openai/v1/audio/transcriptions".into());
+    let model = std::env::var("BARK_MODEL").unwrap_or_else(|_| "whisper-large-v3-turbo".into());
 
     let bark_config = bark_core::BarkConfig {
         engine: bark_core::EngineConfig {
@@ -31,8 +29,7 @@ fn main() -> anyhow::Result<()> {
             agc: None,
             vad: None,
         },
-        post: bark_core::PostConfig {
-        },
+        post: bark_core::PostConfig {},
     };
 
     // -- audio device setup -------------------------------------------------
@@ -57,7 +54,14 @@ fn main() -> anyhow::Result<()> {
     let running = Arc::new(AtomicBool::new(true));
 
     // -- build the capture stream -------------------------------------------
-    let stream = build_stream(&device, &supported.config(), &audio, &running, channels, supported.sample_format())?;
+    let stream = build_stream(
+        &device,
+        &supported.config(),
+        &audio,
+        &running,
+        channels,
+        supported.sample_format(),
+    )?;
 
     // -- Ctrl+C handler -----------------------------------------------------
     ctrlc::set_handler({
@@ -80,7 +84,10 @@ fn main() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    eprintln!("Transcribing {:.1} seconds of audio…", samples_f32.len() as f64 / sample_rate as f64);
+    eprintln!(
+        "Transcribing {:.1} seconds of audio…",
+        samples_f32.len() as f64 / sample_rate as f64
+    );
 
     // -- convert to 16 kHz mono i16 ----------------------------------------
     let samples_i16 = convert_to_mono_i16_16khz(&samples_f32, sample_rate);
@@ -162,7 +169,8 @@ macro_rules! make_stream_fn {
 make_stream_fn!(build_stream_f32, f32, |s: f32| s);
 make_stream_fn!(build_stream_i16, i16, |s: i16| s as f32 / 32768.0);
 make_stream_fn!(build_stream_i32, i32, |s: i32| s as f32 / 2147483648.0);
-make_stream_fn!(build_stream_u16, u16, |s: u16| (s as f32 - 32768.0) / 32768.0);
+make_stream_fn!(build_stream_u16, u16, |s: u16| (s as f32 - 32768.0)
+    / 32768.0);
 
 // ---------------------------------------------------------------------------
 // Convert a mono f32 buffer at an arbitrary sample rate to 16 kHz mono i16

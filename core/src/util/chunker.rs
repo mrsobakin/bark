@@ -34,26 +34,34 @@ impl<T: Default + Copy, const N: usize> Chunker<T, N> {
     }
 
     /// Process input data, calling `f` once for every complete frame of `N` elements.
-    pub fn feed<R: CallbackResult>(&mut self, mut data: &[T], mut f: impl FnMut(&[T; N]) -> R) -> R {
+    pub fn feed<R: CallbackResult>(
+        &mut self,
+        mut data: &[T],
+        mut f: impl FnMut(&[T; N]) -> R,
+    ) -> R {
         // 1. Complete any pending partial frame.
         if self.len > 0 {
             let take = usize::min(N - self.len, data.len());
-            
+
             self.buf[self.len..self.len + take].copy_from_slice(&data[..take]);
             self.len += take;
             data = &data[take..];
 
             if self.len == N {
                 self.len = 0;
-                if let Some(e) = f(&self.buf).err() { return e; };
+                if let Some(e) = f(&self.buf).err() {
+                    return e;
+                };
             } else {
-                return R::ok()
+                return R::ok();
             }
         }
 
         // 2. Process whole frames directly from input.
         while let Some((frame, tail)) = data.split_first_chunk::<N>() {
-            if let Some(e) = f(frame).err() { return e; };
+            if let Some(e) = f(frame).err() {
+                return e;
+            };
             data = tail;
         }
 
@@ -68,7 +76,9 @@ impl<T: Default + Copy, const N: usize> Chunker<T, N> {
 
     /// If there is a pending partial frame, pad it with `T::default()` and call `f` on it.
     pub fn finish<R>(&mut self, f: impl FnOnce(&[T; N]) -> R) -> R
-    where R: CallbackResult {
+    where
+        R: CallbackResult,
+    {
         if self.len > 0 {
             self.buf[self.len..N].fill(T::default());
             self.len = 0;

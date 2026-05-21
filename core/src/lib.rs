@@ -28,6 +28,6 @@ pub type Result<T> = std::result::Result<T, BarkError>;
 
 pub use bark::*;
 pub use config::*;
-pub use pre::*;
-pub use post::*;
 pub use engine::*;
+pub use post::*;
+pub use pre::*;

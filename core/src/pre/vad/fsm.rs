@@ -1,5 +1,5 @@
-use crate::pre::vad::VAD_FRAME_SAMPLES;
 use crate::pre::vad::SAMPLE_RATE;
+use crate::pre::vad::VAD_FRAME_SAMPLES;
 use crate::VadConfig;
 use std::collections::VecDeque;
 
@@ -118,8 +118,7 @@ mod tests {
     }
 
     fn is_filled_with(frame: &[i16], expected: i16) -> bool {
-        (frame.len() == VAD_FRAME_SAMPLES) && 
-            frame.iter().all(|&s| s == expected)
+        (frame.len() == VAD_FRAME_SAMPLES) && frame.iter().all(|&s| s == expected)
     }
 
     #[test]

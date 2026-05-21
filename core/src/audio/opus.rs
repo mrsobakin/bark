@@ -1,5 +1,5 @@
-use crate::util::chunker::Chunker;
 use super::EncodeError;
+use crate::util::chunker::Chunker;
 use opus::{Application, Bitrate, Channels};
 use std::io::Write;
 
@@ -11,14 +11,14 @@ const BITRATE_KBPS: i32 = 24;
 
 pub struct OpusEncoder<W: Write> {
     inner: InternalOpusEncoder<W>,
-    chunker: Chunker<i16, OPUS_FRAME_SIZE>, 
+    chunker: Chunker<i16, OPUS_FRAME_SIZE>,
 }
 
 impl<W: Write> OpusEncoder<W> {
     pub fn new(writer: W) -> Result<Self, EncodeError> {
         Ok(Self {
             inner: InternalOpusEncoder::new(BITRATE_KBPS, writer)?,
-            chunker: Chunker::new(), 
+            chunker: Chunker::new(),
         })
     }
 
@@ -138,11 +138,13 @@ mod tests {
         let num_samples = (SAMPLE_RATE as f32 * duration_secs) as usize;
         let frequency = 440.0_f32;
 
-        (0..num_samples).map(|i| {
-            let t = i as f32 / SAMPLE_RATE as f32;
-            let sample = (2.0 * std::f32::consts::PI * frequency * t).sin();
-            (sample * i16::MAX as f32) as i16
-        }).collect()
+        (0..num_samples)
+            .map(|i| {
+                let t = i as f32 / SAMPLE_RATE as f32;
+                let sample = (2.0 * std::f32::consts::PI * frequency * t).sin();
+                (sample * i16::MAX as f32) as i16
+            })
+            .collect()
     }
 
     #[test]
@@ -163,7 +165,7 @@ mod tests {
 
         for sz in [42, 413, 1337, 37, 234, 1000].iter().cycle() {
             let Some((slice, tail)) = left.split_at_checked(*sz as usize) else {
-                break
+                break;
             };
 
             feed(slice);

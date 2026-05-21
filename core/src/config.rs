@@ -75,8 +75,7 @@ impl Default for VadConfig {
 /// Post-processing configuration.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default)]
-pub struct PostConfig {
-}
+pub struct PostConfig {}
 
 /// Whisper-compatible transcription engine configuration.
 #[derive(Debug, Clone, Deserialize)]
@@ -124,7 +123,6 @@ impl Default for BarkConfig {
 
 impl Default for PostConfig {
     fn default() -> Self {
-        Self {
-        }
+        Self {}
     }
 }

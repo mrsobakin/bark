@@ -1,10 +1,10 @@
 use crate::audio::OpusEncoder;
 use crate::config::BarkConfig;
 use crate::engine::{TranscriptionEngine, WhisperClient};
-use crate::Result;
 use crate::post;
-use crate::pre::Agc;
 use crate::pre::vad::VadProcessor;
+use crate::pre::Agc;
+use crate::Result;
 
 pub struct Bark {
     config: BarkConfig,

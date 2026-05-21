@@ -55,9 +55,7 @@ impl TranscriptionEngine for WhisperClient {
             body.truncate(200);
             let snippet = body.replace('\n', " ");
 
-            return Err(TranscriptionError(format!(
-                "HTTP {status}: {snippet}"
-            )));
+            return Err(TranscriptionError(format!("HTTP {status}: {snippet}")));
         }
 
         let text = resp.text()?;

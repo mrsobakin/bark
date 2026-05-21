@@ -1,14 +1,14 @@
-use crate::util::chunker::Chunker;
 use crate::config::VadConfig;
+use crate::util::chunker::Chunker;
 use thiserror::Error;
 
 const SAMPLE_RATE: u32 = 16_000;
 
-mod silero;
 mod fsm;
+mod silero;
 
+use fsm::VadFSM;
 use silero::{SileroVad, VAD_FRAME_SAMPLES};
-use fsm::{VadFSM};
 
 #[derive(Error, Debug)]
 #[error("{0}")]
@@ -47,12 +47,12 @@ impl VadProcessor {
     pub fn finish(&mut self) -> Vec<i16> {
         let mut result = vec![];
 
-         self.chunker.finish(|f| {
+        self.chunker.finish(|f| {
             let is_speech = self.vad.is_speech(f, self.threshold);
             result = self.fsm.process(is_speech, f);
-         });
+        });
 
-         result
+        result
     }
 
     pub fn reset(&mut self) {

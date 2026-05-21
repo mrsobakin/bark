@@ -1,3 +1,10 @@
 [workspace]
-members = ["bark-core", "bark-jni", "bark-demo"]
+members = ["core", "jni", "demo"]
 resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+
+[workspace.dependencies]
+bark-core = { path = "core" }

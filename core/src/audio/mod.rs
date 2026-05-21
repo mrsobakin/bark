@@ -1,7 +1,7 @@
 mod opus;
 
-use thiserror::Error;
 pub use opus::OpusEncoder;
+use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum EncodeError {
