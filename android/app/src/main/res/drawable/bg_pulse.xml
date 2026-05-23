@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Pulsing circle behind the mic that glows with audio amplitude -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="oval">
+    <solid android:color="@color/mic_active" />
+    <size android:width="72dp" android:height="72dp" />
+</shape>

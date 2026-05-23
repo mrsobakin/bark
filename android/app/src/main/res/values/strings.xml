@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Bark</string>
+    <string name="settings_title">Bark Settings</string>
+    <string name="tap_to_record">Tap to record</string>
+    <string name="mic_permission">Microphone permission is required for voice input.</string>
+    <string name="endpoint_url">API URL</string>
+    <string name="endpoint_url_hint">https://api.openai.com/v1/audio/transcriptions</string>
+    <string name="model">Model</string>
+    <string name="model_hint">whisper-large-v3-turbo</string>
+    <string name="api_key">API Key</string>
+    <string name="api_key_hint">sk-…</string>
+    <string name="initial_prompt">Initial Prompt</string>
+    <string name="initial_prompt_hint">Optional context for the transcription model</string>
+    <string name="settings_desc">Requires an OpenAI-compatible /v1/audio/transcriptions endpoint. The audio is sent as an OGG/Opus file. Leave API Key blank for local providers.</string>
+    <string name="save">Save</string>
+    <string name="saved">Saved</string>
+    <string name="error_no_endpoint">Please set an API URL in settings</string>
+    <string name="error_transcription">Transcription failed</string>
+    <string name="error_audio">Audio capture failed</string>
+</resources>
