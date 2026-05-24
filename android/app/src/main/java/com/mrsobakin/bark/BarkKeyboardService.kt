@@ -235,11 +235,11 @@ class BarkKeyboardService : InputMethodService() {
         }
 
         val vad = JSONObject().apply {
-            put("threshold", 0.5)
+            put("threshold", 0.3)
             put("min_speech_ms", 100)
             put("min_silence_ms", 150)
             put("max_silence_ms", 500)
-            put("attack_ms", 150)
+            put("attack_ms", 200)
         }
 
         val pre = JSONObject().apply {
