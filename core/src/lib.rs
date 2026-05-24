@@ -1,3 +1,5 @@
+#![feature(slice_as_array)]
+
 mod audio;
 mod bark;
 mod config;

@@ -1,12 +1,21 @@
-use super::VadError;
+use super::{VadError, SAMPLE_RATE};
 
 pub const VAD_FRAME_SAMPLES: usize = 512;
+const VAD_STATE_LEN: usize = 2 * 1 * 128;
+const VAD_STATE_DIM: [i64; 3] = [2, 1, 128];
+const VAD_CONTEXT_SAMPLES: usize = 64;
 const SILERO_VAD_MODEL: &[u8] = include_bytes!("./silero_vad.onnx");
+
+impl From<ort::Error> for VadError {
+    fn from(value: ort::Error) -> Self {
+        Self(value.to_string())
+    }
+}
 
 pub struct SileroVad {
     session: ort::session::Session,
-    h: Vec<f32>,
-    c: Vec<f32>,
+    state: Box<[f32]>,
+    context: [f32; VAD_CONTEXT_SAMPLES],
 }
 
 impl SileroVad {
@@ -18,74 +27,67 @@ impl SileroVad {
 
         Ok(Self {
             session,
-            h: vec![0.0; 128],
-            c: vec![0.0; 128],
+            state: Box::new([0.0; VAD_STATE_LEN]),
+            context: [0.0; VAD_CONTEXT_SAMPLES],
         })
     }
-}
 
-impl From<ort::Error> for VadError {
-    fn from(value: ort::Error) -> Self {
-        Self(value.to_string())
-    }
-}
-
-impl SileroVad {
-    pub fn is_speech(&mut self, frame: &[i16], threshold: f32) -> bool {
-        self.is_speech_or_err(frame, threshold).unwrap_or(true)
+    pub fn is_speech(&mut self, frame: &[i16], threshold: f32) -> Result<bool, VadError> {
+        self.predict(frame).map(|p| p > threshold)
     }
 
-    fn is_speech_or_err(&mut self, frame: &[i16], threshold: f32) -> Result<bool, VadError> {
+    pub fn predict(&mut self, frame: &[i16]) -> Result<f32, VadError> {
         use ort::value::Tensor;
 
-        let mut f32_frame = vec![0.0f32; VAD_FRAME_SAMPLES];
-        for (i, &s) in frame.iter().enumerate() {
-            f32_frame[i] = s as f32 / 32768.0;
-        }
+        // 1. Prepare input
+        debug_assert_eq!(frame.len(), VAD_FRAME_SAMPLES);
 
+        let mut input: Vec<f32> = Vec::with_capacity(VAD_CONTEXT_SAMPLES + VAD_FRAME_SAMPLES);
+        input.extend(self.context);
+        input.extend(frame.iter().map(|&s| s as f32 / 32768.0));
+
+        let new_context = input.last_chunk::<VAD_CONTEXT_SAMPLES>().unwrap();
+        self.context.clone_from_slice(new_context);
+
+        // 2. Build tensors
         let input_val = Tensor::from_array((
-            vec![1i64, VAD_FRAME_SAMPLES as i64],
-            f32_frame.into_boxed_slice(),
+            [1i64, input.len() as i64],
+            input,
         ))?;
 
-        let sr_val = Tensor::from_array((vec![1i64], vec![16000i64].into_boxed_slice()))?;
-        let h_val =
-            Tensor::from_array((vec![2i64, 1i64, 64i64], self.h.clone().into_boxed_slice()))?;
-        let c_val =
-            Tensor::from_array((vec![2i64, 1i64, 64i64], self.c.clone().into_boxed_slice()))?;
+        let state_val = Tensor::from_array((
+            VAD_STATE_DIM,
+            std::mem::replace(&mut self.state, Box::new([0.0; VAD_STATE_LEN])),
+        ))?;
 
-        let result = self
-            .session
-            .run(ort::inputs![input_val, sr_val, h_val, c_val]);
+        let sr_val = Tensor::from_array((
+            [1i64],
+            vec![SAMPLE_RATE as i64],
+        ))?;
 
-        Ok(match result {
-            Ok(outputs) => {
-                let prob = outputs[0]
-                    .try_extract_tensor::<f32>()
-                    .ok()
-                    .and_then(|(_, data)| data.first().copied())
-                    .unwrap_or(0.0);
+        // 3. Run inference
+        let outputs = self.session.run(ort::inputs![input_val, state_val, sr_val])?;
 
-                if outputs.len() > 1 {
-                    if let Ok((_, hn)) = outputs[1].try_extract_tensor::<f32>() {
-                        self.h = hn.to_vec();
-                    }
-                }
-                if outputs.len() > 2 {
-                    if let Ok((_, cn)) = outputs[2].try_extract_tensor::<f32>() {
-                        self.c = cn.to_vec();
-                    }
-                }
+        let prob = *outputs.get("output")
+            .expect("output field should exist in outputs")
+            .try_extract_tensor::<f32>()?.1
+            .first()
+            .expect("output field is invalid");
 
-                prob > threshold
-            }
-            Err(_) => false,
-        })
+        let state = outputs.get("stateN")
+            .expect("stateN field should exist in outputs")
+            .try_extract_tensor::<f32>()?.1
+            .as_array::<{VAD_STATE_LEN}>()
+            .expect("stateN field is invalid");
+
+        self.state.clone_from_slice(state);
+
+        Ok(prob)
     }
 
     pub fn reset(&mut self) {
-        self.h = vec![0.0; 128];
-        self.c = vec![0.0; 128];
+        self.state.fill(0.0);
+        self.context.fill(0.0);
     }
 }
 
@@ -99,7 +101,7 @@ mod tests {
 
         let frame = [0i16; VAD_FRAME_SAMPLES];
 
-        if let Err(err) = vad.is_speech_or_err(&frame, 0f32) {
+        if let Err(err) = vad.is_speech(&frame, 0f32) {
             panic!("vad fails to process a frame: {err}")
         }
     }

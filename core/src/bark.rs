@@ -33,7 +33,7 @@ impl Bark {
         }
 
         let speech = if let Some(ref mut vad) = self.vad {
-            vad.feed(&data)
+            vad.feed(&data)?
         } else {
             data
         };
@@ -54,7 +54,7 @@ impl Bark {
 
     pub fn finalize(&mut self) -> Result<String> {
         if let Some(ref mut v) = self.vad {
-            let tail = v.finish();
+            let tail = v.finish()?;
             if !tail.is_empty() {
                 self.get_encoder()?.feed(&tail)?;
             }

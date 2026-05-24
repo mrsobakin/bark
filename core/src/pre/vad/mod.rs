@@ -8,7 +8,7 @@ mod fsm;
 mod silero;
 
 use fsm::VadFSM;
-use silero::{SileroVad, VAD_FRAME_SAMPLES};
+pub use silero::{SileroVad, VAD_FRAME_SAMPLES};
 
 #[derive(Error, Debug)]
 #[error("{0}")]
@@ -33,26 +33,28 @@ impl VadProcessor {
         })
     }
 
-    pub fn feed(&mut self, audio: &[i16]) -> Vec<i16> {
+    pub fn feed(&mut self, audio: &[i16]) -> Result<Vec<i16>, VadError> {
         let mut result = Vec::new();
 
-        self.chunker.feed(audio, |f| {
-            let is_speech = self.vad.is_speech(f, self.threshold);
+        self.chunker.feed(audio, |f| -> Result<(), VadError> {
+            let is_speech = self.vad.is_speech(f, self.threshold)?;
             result.extend_from_slice(&self.fsm.process(is_speech, f));
-        });
+            Ok(())
+        })?;
 
-        result
+        Ok(result)
     }
 
-    pub fn finish(&mut self) -> Vec<i16> {
+    pub fn finish(&mut self) -> Result<Vec<i16>, VadError> {
         let mut result = vec![];
 
-        self.chunker.finish(|f| {
-            let is_speech = self.vad.is_speech(f, self.threshold);
+        self.chunker.finish(|f| -> Result<(), VadError> {
+            let is_speech = self.vad.is_speech(f, self.threshold)?;
             result = self.fsm.process(is_speech, f);
-        });
+            Ok(())
+        })?;
 
-        result
+        Ok(result)
     }
 
     pub fn reset(&mut self) {
