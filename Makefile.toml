@@ -1,0 +1,59 @@
+[config]
+default_to_workspace = false
+
+[env]
+ANDROID_HOME                  = { value = "${HOME}/.local/share/android",                          condition = { env_not_set = ["ANDROID_HOME"] } }
+ANDROID_NDK_VERSION           = { value = "27.2.12479018",                                         condition = { env_not_set = ["ANDROID_NDK_VERSION"] } }
+ANDROID_BUILD_TOOLS_VERSION   = { value = "34.0.0",                                                condition = { env_not_set = ["ANDROID_BUILD_TOOLS_VERSION"] } }
+ANDROID_COMPILE_SDK           = { value = "34",                                                    condition = { env_not_set = ["ANDROID_COMPILE_SDK"] } }
+ANDROID_PLATFORM              = { value = "29",                                                    condition = { env_not_set = ["ANDROID_PLATFORM"] } }
+ANDROID_ABI                   = { value = "arm64-v8a",                                             condition = { env_not_set = ["ANDROID_ABI"] } }
+ANDROID_NDK_HOME              = { value = "${ANDROID_HOME}/ndk/${ANDROID_NDK_VERSION}",            condition = { env_not_set = ["ANDROID_NDK_HOME"] } }
+JNI_LIBS_DIR                  = "${CARGO_MAKE_WORKING_DIRECTORY}/android/app/src/main/jniLibs"
+
+[tasks.sdk]
+description = "Install required components for android cross-compilation"
+script = '''
+set -e
+mkdir -p "${ANDROID_HOME}"
+
+yes | sdkmanager --sdk_root="${ANDROID_HOME}" --install \
+    "ndk;${ANDROID_NDK_VERSION}" \
+    "build-tools;${ANDROID_BUILD_TOOLS_VERSION}" \
+    "platforms;android-${ANDROID_COMPILE_SDK}" >/dev/null
+
+rustup target add \
+    aarch64-linux-android
+
+cargo install cargo-ndk --locked
+'''
+
+[tasks.jni]
+# Cmake fixes for building opus
+env = { ANDROID_NDK = "${ANDROID_NDK_HOME}", CMAKE_POLICY_VERSION_MINIMUM = "3.5" }
+script = '''
+cargo ndk \
+    -t "${ANDROID_ABI}" -P "${ANDROID_PLATFORM}" -o "${JNI_LIBS_DIR}" \
+    --link-libcxx-shared \
+    --manifest-path jni/Cargo.toml \
+    -- \
+    build --profile "$CARGO_MAKE_CARGO_PROFILE"
+'''
+
+[tasks.apk]
+description = "Build APK"
+dependencies = ["jni"]
+script = '''
+if [ "${CARGO_MAKE_PROFILE}" = "release" ]; then
+    ./gradlew assembleRelease
+else
+    ./gradlew assembleDebug
+fi
+'''
+cwd = "${CARGO_MAKE_WORKING_DIRECTORY}/android"
+
+[tasks.apk-install]
+description = "Install debug APK on connected device"
+dependencies = ["jni"]
+script = "./gradlew installDebug"
+cwd = "${CARGO_MAKE_WORKING_DIRECTORY}/android"

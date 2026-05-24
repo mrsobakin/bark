@@ -27,24 +27,21 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.MultipartBody
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONObject
 import java.io.IOException
-import java.util.concurrent.TimeUnit
 
 /**
  * Auto-records when the keyboard opens; tap to stop, transcribe, commit, and switch back.
+ *
+ * Audio capture, VAD, Opus encoding, HTTP upload, and transcription are all
+ * handled in Rust via JNI.  Android is just the UI shell.
  */
 class BarkKeyboardService : InputMethodService() {
 
     companion object {
         private const val TAG = "BarkKeyboard"
-        private const val PERMISSION_TIMEOUT_MS = 5000L
+        private const val PERMISSION_TIMEOUT_MS = 5_000L
 
         /** One-shot channel for [PermissionBridgeActivity]. */
         val permissionResult = Channel<Boolean>(Channel.CONFLATED)
@@ -76,14 +73,6 @@ class BarkKeyboardService : InputMethodService() {
     // Spinner state
 
     private var spinnerAnimator: ObjectAnimator? = null
-
-    // HTTP
-
-    private val httpClient = OkHttpClient.Builder()
-        .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(60, TimeUnit.SECONDS)
-        .writeTimeout(30, TimeUnit.SECONDS)
-        .build()
 
     // IME lifecycle
 
@@ -184,20 +173,34 @@ class BarkKeyboardService : InputMethodService() {
             }
         }
 
-        // ---- 2. Record (until user taps mic or max duration) ----
-        updateUi(State.Recording)
-        val audioData: ByteArray?
+        // ---- 2. Build config from settings ----
+        val configJson: String
         try {
-            audioData = audioCapture.recordOnce(
-                context = this@BarkKeyboardService,
+            configJson = buildConfigJson()
+        } catch (e: IOException) {
+            updateUi(State.Error(e.message ?: getString(R.string.error_no_endpoint)))
+            delay(3000)
+            updateUi(State.Idle)
+            scheduleSwitchBack()
+            return
+        }
+
+        // ---- 3. Record + transcribe (everything in Rust via JNI) ----
+        updateUi(State.Recording)
+        val text: String?
+        try {
+            text = audioCapture.recordOnce(
+                configJson = configJson,
                 onLevel = { level -> onAudioLevel(level) },
             )
         } catch (_: CancellationException) {
             return
         } catch (e: Exception) {
-            Log.e(TAG, "recording failed", e)
-            updateUi(State.Error(getString(R.string.error_audio)))
-            delay(2000)
+            Log.e(TAG, "recording/transcription failed", e)
+            val className = e::class.simpleName ?: "Exception"
+            val msg = e.message?.let { "$className: $it" } ?: className
+            updateUi(State.Error("${getString(R.string.error_transcription)}: $msg"))
+            delay(3000)
             updateUi(State.Idle)
             scheduleSwitchBack()
             return
@@ -205,35 +208,17 @@ class BarkKeyboardService : InputMethodService() {
 
         if (currentJob?.isActive != true) return
 
-        // No audio captured — go idle and switch back
-        val data = audioData ?: run {
-            updateUi(State.Idle)
-            scheduleSwitchBack()
-            return
+        // ---- 4. Commit transcribed text ----
+        if (!text.isNullOrBlank()) {
+            commitText(text)
         }
 
-        // ---- 3. Transcribe ----
-        updateUi(State.Transcribing)
-        try {
-            val text = uploadAndTranscribe(data)
-            if (text.isNotBlank()) {
-                commitText(text)
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "transcription failed", e)
-            val className = e::class.simpleName ?: "Exception"
-            val msg = e.message?.let { "$className: $it" } ?: className
-            updateUi(State.Error("${getString(R.string.error_transcription)}: $msg"))
-            delay(3000)
-        } finally {
-            updateUi(State.Idle)
-        }
-
-        // ---- 4. Switch back ----
+        updateUi(State.Idle)
         scheduleSwitchBack()
     }
 
-    private suspend fun uploadAndTranscribe(data: ByteArray): String = withContext(Dispatchers.IO) {
+    /** Build the JSON config for [BarkConfig] from shared preferences. */
+    private fun buildConfigJson(): String {
         val prefs = getSharedPreferences("bark", MODE_PRIVATE)
         val url = prefs.getString("endpoint_url", "").orEmpty()
         val model = prefs.getString("model", "whisper-large-v3-turbo").orEmpty()
@@ -242,32 +227,29 @@ class BarkKeyboardService : InputMethodService() {
 
         if (url.isEmpty()) throw IOException(getString(R.string.error_no_endpoint))
 
-        val mediaType = "audio/ogg".toMediaType()
-        val body = MultipartBody.Builder()
-            .setType(MultipartBody.FORM)
-            .addFormDataPart("file", "recording.ogg", data.toRequestBody(mediaType))
-            .addFormDataPart("model", model.ifEmpty { "whisper-large-v3-turbo" })
-            .addFormDataPart("response_format", "text")
-            .apply {
-                if (prompt.isNotEmpty()) {
-                    addFormDataPart("prompt", prompt)
-                }
-            }
-            .build()
-
-        val requestBuilder = Request.Builder().url(url).post(body)
-        if (apiKey.isNotEmpty()) {
-            requestBuilder.addHeader("Authorization", "Bearer $apiKey")
+        val engine = JSONObject().apply {
+            put("endpoint", url)
+            put("api_key", apiKey)
+            put("model", model.ifEmpty { "whisper-large-v3-turbo" })
+            if (prompt.isNotEmpty()) put("prompt", prompt)
         }
 
-        httpClient.newCall(requestBuilder.build()).execute().use { response ->
-            val bodyStr = response.body?.string()?.trim() ?: ""
-            if (!response.isSuccessful) {
-                val snippet = bodyStr.take(200).replace("\n", " ")
-                throw IOException("HTTP ${response.code}: $snippet")
-            }
-            bodyStr
+        val vad = JSONObject().apply {
+            put("threshold", 0.5)
+            put("min_speech_ms", 100)
+            put("min_silence_ms", 150)
+            put("max_silence_ms", 500)
+            put("attack_ms", 150)
         }
+
+        val pre = JSONObject().apply {
+            put("vad", vad)
+        }
+
+        return JSONObject().apply {
+            put("pre", pre)
+            put("engine", engine)
+        }.toString()
     }
 
     private fun commitText(text: String) {

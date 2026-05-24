@@ -1,11 +1,5 @@
-# Keep OkHttp
--dontwarn okhttp3.**
--dontwarn okio.**
--keep class okhttp3.** { *; }
--keep class okio.** { *; }
+# Keep the JNI native methods (called from BarkPipeline)
+-keep class com.mrsobakin.bark.BarkPipeline { *; }
 
-# Keep silero-vad (ONNX runtime + native libs)
--dontwarn com.konovalov.vad.**
--keep class com.konovalov.vad.** { *; }
--dontwarn ai.onnxruntime.**
--keep class ai.onnxruntime.** { *; }
+# Keep kotlinx.coroutines (used for async)
+-keep class kotlinx.coroutines.** { *; }

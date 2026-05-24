@@ -1,5 +1,5 @@
-use jni::objects::{JClass, JShortArray, JString};
-use jni::sys::{jlong, jshortArray, jstring};
+use jni::objects::{JByteArray, JClass, JString};
+use jni::sys::{jbyteArray, jlong, jstring};
 use jni::JNIEnv;
 
 use bark_core::{Bark, BarkConfig};
@@ -94,15 +94,15 @@ pub extern "system" fn Java_com_mrsobakin_bark_BarkPipeline_nativePushAudio(
     mut env: JNIEnv,
     _class: JClass,
     handle: jlong,
-    frames: jshortArray,
+    data: jbyteArray,
 ) {
     if handle == 0 {
         throw_state(&mut env, "BarkPipeline not initialized");
         return;
     }
 
-    // SAFETY: frames is a valid jshortArray provided by the JNI runtime.
-    let jarray = unsafe { JShortArray::from_raw(frames) };
+    // SAFETY: data is a valid jbyteArray provided by the JNI runtime.
+    let jarray = unsafe { JByteArray::from_raw(data) };
     let len = match env.get_array_length(&jarray) {
         Ok(n) => n as usize,
         Err(e) => {
@@ -111,20 +111,27 @@ pub extern "system" fn Java_com_mrsobakin_bark_BarkPipeline_nativePushAudio(
         }
     };
 
-    if len == 0 {
+    if len < 2 {
         return;
     }
 
-    let mut buf = vec![0i16; len];
-    if let Err(e) = env.get_short_array_region(&jarray, 0, &mut buf) {
-        throw_arg(&mut env, &format!("Failed to read audio frames: {e}"));
+    let mut buf = vec![0i8; len];
+    if let Err(e) = env.get_byte_array_region(&jarray, 0, &mut buf) {
+        throw_arg(&mut env, &format!("Failed to read audio data: {e}"));
         return;
     }
+
+    // Reinterpret i8 bytes as u8 for LE i16 conversion
+    let bytes: &[u8] = unsafe { std::slice::from_raw_parts(buf.as_ptr() as *const u8, buf.len()) };
+    let samples: Vec<i16> = bytes
+        .chunks_exact(2)
+        .map(|c| i16::from_le_bytes([c[0], c[1]]))
+        .collect();
 
     // SAFETY: see deref_handle's safety contract — the mutable reference lives
     // only for the duration of this call and cannot alias.
     let bark = unsafe { deref_handle(handle) };
-    if let Err(e) = bark.push_audio(&buf) {
+    if let Err(e) = bark.push_audio(&samples) {
         throw_state(&mut env, &format!("Push audio failed: {e}"));
     }
 }

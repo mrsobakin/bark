@@ -1,13 +1,4 @@
-*.iml
-.gradle
-.idea
-.DS_Store
-build
-/captures
+build/
+.gradle/
+app/src/main/jniLibs/
 local.properties
-*.apk
-*.aab
-*.ap_
-*.dex
-*.class
-*.log
