@@ -45,7 +45,7 @@ struct InternalOpusEncoder<W: Write> {
     ogg: ogg::writing::PacketWriter<'static, W>,
     serial: u32,
     granule_pos: u64,
-    finished: bool,
+    pending: Option<Vec<u8>>,
 }
 
 impl<W: Write> InternalOpusEncoder<W> {
@@ -61,7 +61,7 @@ impl<W: Write> InternalOpusEncoder<W> {
             ogg,
             serial,
             granule_pos: 0,
-            finished: false,
+            pending: None,
         };
 
         this.write_headers()?;
@@ -102,30 +102,34 @@ impl<W: Write> InternalOpusEncoder<W> {
     }
 
     fn encode(&mut self, pcm: &[i16; OPUS_FRAME_SIZE]) -> Result<(), EncodeError> {
-        let mut encoded = [0u8; 4000];
-        let len = self.opus.encode(pcm, &mut encoded)?;
-        self.granule_pos += GRANULE_PER_FRAME;
+        let packet = self.opus.encode_vec(pcm, 4000)?;
 
-        self.ogg.write_packet(
-            encoded[..len].to_vec(),
-            self.serial,
-            ogg::writing::PacketWriteEndInfo::NormalPacket,
-            self.granule_pos,
-        )?;
+        if let Some(packet) = self.pending.replace(packet) {
+            self.granule_pos += GRANULE_PER_FRAME;
+            self.ogg.write_packet(
+                packet,
+                self.serial,
+                ogg::writing::PacketWriteEndInfo::NormalPacket,
+                self.granule_pos,
+            )?;
+        };
 
         Ok(())
     }
 
     fn finish(mut self) -> Result<W, EncodeError> {
-        if !self.finished {
-            self.ogg.write_packet(
-                &[],
-                self.serial,
-                ogg::writing::PacketWriteEndInfo::EndStream,
-                self.granule_pos,
-            )?;
-            self.finished = true;
-        }
+        let packet = self.pending.take().unwrap_or_else(|| Vec::new());
+
+        // Technically opus packets of length 0 are considered corrupted.
+        // We'll send them anyway for empty streams to singal error for decoder.
+        self.granule_pos += GRANULE_PER_FRAME;
+        self.ogg.write_packet(
+            packet,
+            self.serial,
+            ogg::writing::PacketWriteEndInfo::EndStream,
+            self.granule_pos,
+        )?;
+
         Ok(self.ogg.into_inner())
     }
 }
