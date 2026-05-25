@@ -1,12 +1,8 @@
 package com.mrsobakin.bark
 
-/**
- * JNI bridge to the Rust [bark_core::Bark] pipeline.
- *
- * Handles VAD, Opus encoding, HTTP upload, and transcription in Rust.
- * Android just captures PCM audio, pushes it here, and reads the final text.
- */
-class BarkPipeline : AutoCloseable {
+class BarkPipeline(
+    configJson: String,
+) : AutoCloseable {
 
     companion object {
         init {
@@ -14,65 +10,49 @@ class BarkPipeline : AutoCloseable {
         }
     }
 
-    private var handle: Long = 0
+    private var nativeHandle: Long = 0
 
-    /**
-     * Create a new pipeline instance.
-     * @param configJson JSON-serialized [bark_core::BarkConfig] with VAD and engine settings.
-     * @throws IllegalStateException if creation fails.
-     */
-    fun create(configJson: String) {
-        if (handle != 0L) destroy()
-        handle = nativeCreate(configJson)
-        if (handle == 0L) {
-            throw IllegalStateException("BarkPipeline nativeCreate returned null handle")
-        }
+    init {
+        nativeCreate(configJson)
+        check(nativeHandle != 0L) { "BarkPipeline nativeCreate returned null handle" }
     }
 
-    /** Release the native handle. Safe to call multiple times. */
+    @Synchronized
     fun destroy() {
-        if (handle != 0L) {
-            nativeDestroy(handle)
-            handle = 0L
-        }
+        nativeDestroy()
     }
 
-    /** Reset VAD state and encoder for a new recording session. */
+    @Synchronized
     fun reset() {
-        if (handle == 0L) throw IllegalStateException("BarkPipeline not initialized")
-        nativeReset(handle)
+        checkOpen()
+        nativeReset()
     }
 
-    /**
-     * Push raw 16-bit PCM audio data (little-endian bytes) to the pipeline.
-     * The Rust side runs VAD and encodes speech segments as Opus.
-     */
-    fun pushAudio(data: ByteArray) {
-        if (handle == 0L) throw IllegalStateException("BarkPipeline not initialized")
-        nativePushAudio(handle, data)
+    @Synchronized
+    fun pushAudio(data: ShortArray, samples: Int) {
+        checkOpen()
+        require(samples in 0..data.size) { "Invalid sample count: $samples" }
+        nativePushAudio(data, samples)
     }
 
-    /**
-     * Finalize the recording: flush VAD, finish Opus stream, upload to
-     * the configured Whisper endpoint, and return the transcribed text.
-     *
-     * @return Transcribed text, or empty string if no speech was detected.
-     * @throws IllegalStateException if finalization fails.
-     */
+    @Synchronized
     fun finalize(): String {
-        if (handle == 0L) throw IllegalStateException("BarkPipeline not initialized")
-        return nativeFinalize(handle) ?: ""
+        checkOpen()
+        return nativeFinalize() ?: ""
     }
 
+    @Synchronized
     override fun close() {
         destroy()
     }
 
-    // ── Native methods ─────────────────────────────────────────────
+    private fun checkOpen() {
+        check(nativeHandle != 0L) { "BarkPipeline not initialized" }
+    }
 
-    private external fun nativeCreate(configJson: String): Long
-    private external fun nativeDestroy(handle: Long)
-    private external fun nativeReset(handle: Long)
-    private external fun nativePushAudio(handle: Long, data: ByteArray)
-    private external fun nativeFinalize(handle: Long): String?
+    private external fun nativeCreate(configJson: String)
+    private external fun nativeDestroy()
+    private external fun nativeReset()
+    private external fun nativePushAudio(data: ShortArray, samples: Int)
+    private external fun nativeFinalize(): String?
 }

@@ -5,11 +5,6 @@ import android.app.Activity
 import android.content.pm.PackageManager
 import android.os.Bundle
 
-/**
- * Transparent one-shot activity that requests RECORD_AUDIO permission.
- * IME services can't show permission dialogs directly, so this bridge
- * signals the result via [BarkKeyboardService.permissionResult].
- */
 class PermissionBridgeActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {

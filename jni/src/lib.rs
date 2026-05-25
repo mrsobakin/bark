@@ -1,19 +1,52 @@
-use jni::objects::{JByteArray, JClass, JString};
-use jni::sys::{jbyteArray, jlong, jstring};
+use jni::objects::{JObject, JShortArray, JString, JValue, ReleaseMode};
+use jni::sys::{jint, jlong, jstring};
 use jni::JNIEnv;
 
 use bark_core::{Bark, BarkConfig};
+
+const HANDLE_FIELD: &str = "nativeHandle";
+const HANDLE_SIG: &str = "J";
 
 fn box_handle(bark: Bark) -> jlong {
     Box::into_raw(Box::new(bark)) as jlong
 }
 
-unsafe fn deref_handle(handle: jlong) -> &'static mut Bark {
+unsafe fn deref_handle<'a>(handle: jlong) -> &'a mut Bark {
     &mut *(handle as *mut Bark)
 }
 
 unsafe fn drop_handle(handle: jlong) {
     let _ = Box::from_raw(handle as *mut Bark);
+}
+
+fn get_handle(env: &mut JNIEnv, this: &JObject) -> Option<jlong> {
+    match env.get_field(this, HANDLE_FIELD, HANDLE_SIG).and_then(|v| v.j()) {
+        Ok(handle) => Some(handle),
+        Err(e) => {
+            throw_state(env, &format!("Failed to read BarkPipeline native handle: {e}"));
+            None
+        }
+    }
+}
+
+fn set_handle(env: &mut JNIEnv, this: &JObject, handle: jlong) -> bool {
+    match env.set_field(this, HANDLE_FIELD, HANDLE_SIG, JValue::Long(handle)) {
+        Ok(()) => true,
+        Err(e) => {
+            throw_state(env, &format!("Failed to store BarkPipeline native handle: {e}"));
+            false
+        }
+    }
+}
+
+fn get_live_handle(env: &mut JNIEnv, this: &JObject) -> Option<jlong> {
+    let handle = get_handle(env, this)?;
+    if handle == 0 {
+        throw_state(env, "BarkPipeline not initialized");
+        None
+    } else {
+        Some(handle)
+    }
 }
 
 fn throw_new(env: &mut JNIEnv, cls: &str, msg: &str) {
@@ -31,14 +64,23 @@ fn throw_state(env: &mut JNIEnv, msg: &str) {
 #[no_mangle]
 pub extern "system" fn Java_com_mrsobakin_bark_BarkPipeline_nativeCreate(
     mut env: JNIEnv,
-    _class: JClass,
-    config_json: jstring,
-) -> jlong {
-    let json: String = match unsafe { env.get_string(&JString::from_raw(config_json)) } {
+    this: JObject,
+    config_json: JString,
+) {
+    match get_handle(&mut env, &this) {
+        Some(0) => {}
+        Some(_) => {
+            throw_state(&mut env, "BarkPipeline already initialized");
+            return;
+        }
+        None => return,
+    }
+
+    let json: String = match env.get_string(&config_json) {
         Ok(s) => s.into(),
         Err(_) => {
             throw_arg(&mut env, "Failed to read config JSON string");
-            return 0;
+            return;
         }
     };
 
@@ -46,7 +88,7 @@ pub extern "system" fn Java_com_mrsobakin_bark_BarkPipeline_nativeCreate(
         Ok(c) => c,
         Err(e) => {
             throw_arg(&mut env, &format!("Invalid config JSON: {e}"));
-            return 0;
+            return;
         }
     };
 
@@ -54,37 +96,41 @@ pub extern "system" fn Java_com_mrsobakin_bark_BarkPipeline_nativeCreate(
         Ok(b) => b,
         Err(e) => {
             throw_state(&mut env, &format!("BarkPipeline init failed: {e}"));
-            return 0;
+            return;
         }
     };
 
-    box_handle(bark)
+    set_handle(&mut env, &this, box_handle(bark));
 }
 
 #[no_mangle]
 pub extern "system" fn Java_com_mrsobakin_bark_BarkPipeline_nativeDestroy(
-    _env: JNIEnv,
-    _class: JClass,
-    handle: jlong,
+    mut env: JNIEnv,
+    this: JObject,
 ) {
+    let Some(handle) = get_handle(&mut env, &this) else {
+        return;
+    };
+
     if handle != 0 {
-        // SAFETY: handle was produced by box_handle and hasn't been freed yet
-        // (the Java-side close() guarantees single-call semantics).
-        unsafe { drop_handle(handle) }
+        if set_handle(&mut env, &this, 0) {
+            // SAFETY: handle was produced by box_handle and has just been
+            // detached from the Java object, so this call owns it.
+            unsafe { drop_handle(handle) }
+        }
     }
 }
 
 #[no_mangle]
 pub extern "system" fn Java_com_mrsobakin_bark_BarkPipeline_nativeReset(
     mut env: JNIEnv,
-    _class: JClass,
-    handle: jlong,
+    this: JObject,
 ) {
-    if handle == 0 {
-        throw_state(&mut env, "BarkPipeline not initialized");
+    let Some(handle) = get_live_handle(&mut env, &this) else {
         return;
-    }
-    // SAFETY: see deref_handle's safety contract — serialised JNI calls.
+    };
+
+    // SAFETY: the Java object serializes access to its native handle.
     let bark = unsafe { deref_handle(handle) };
     bark.reset();
 }
@@ -92,18 +138,20 @@ pub extern "system" fn Java_com_mrsobakin_bark_BarkPipeline_nativeReset(
 #[no_mangle]
 pub extern "system" fn Java_com_mrsobakin_bark_BarkPipeline_nativePushAudio(
     mut env: JNIEnv,
-    _class: JClass,
-    handle: jlong,
-    data: jbyteArray,
+    this: JObject,
+    data: JShortArray,
+    samples: jint,
 ) {
-    if handle == 0 {
-        throw_state(&mut env, "BarkPipeline not initialized");
+    let Some(handle) = get_live_handle(&mut env, &this) else {
+        return;
+    };
+
+    if samples < 0 {
+        throw_arg(&mut env, "Sample count must be non-negative");
         return;
     }
 
-    // SAFETY: data is a valid jbyteArray provided by the JNI runtime.
-    let jarray = unsafe { JByteArray::from_raw(data) };
-    let len = match env.get_array_length(&jarray) {
+    let len = match env.get_array_length(&data) {
         Ok(n) => n as usize,
         Err(e) => {
             throw_arg(&mut env, &format!("Failed to get array length: {e}"));
@@ -111,27 +159,32 @@ pub extern "system" fn Java_com_mrsobakin_bark_BarkPipeline_nativePushAudio(
         }
     };
 
-    if len < 2 {
+    let samples = samples as usize;
+    if samples > len {
+        throw_arg(&mut env, "Sample count exceeds array length");
+        return;
+    }
+    if samples == 0 {
         return;
     }
 
-    let mut buf = vec![0i8; len];
-    if let Err(e) = env.get_byte_array_region(&jarray, 0, &mut buf) {
-        throw_arg(&mut env, &format!("Failed to read audio data: {e}"));
-        return;
-    }
+    let result = {
+        // SAFETY: this call creates the only native elements view for this Java
+        // array during this JNI method, and the slice is not kept after return.
+        let elements = match unsafe { env.get_array_elements(&data, ReleaseMode::NoCopyBack) } {
+            Ok(elements) => elements,
+            Err(e) => {
+                throw_arg(&mut env, &format!("Failed to read audio data: {e}"));
+                return;
+            }
+        };
 
-    // Reinterpret i8 bytes as u8 for LE i16 conversion
-    let bytes: &[u8] = unsafe { std::slice::from_raw_parts(buf.as_ptr() as *const u8, buf.len()) };
-    let samples: Vec<i16> = bytes
-        .chunks_exact(2)
-        .map(|c| i16::from_le_bytes([c[0], c[1]]))
-        .collect();
+        // SAFETY: the Java object serializes access to its native handle.
+        let bark = unsafe { deref_handle(handle) };
+        bark.push_audio(&elements[..samples])
+    };
 
-    // SAFETY: see deref_handle's safety contract — the mutable reference lives
-    // only for the duration of this call and cannot alias.
-    let bark = unsafe { deref_handle(handle) };
-    if let Err(e) = bark.push_audio(&samples) {
+    if let Err(e) = result {
         throw_state(&mut env, &format!("Push audio failed: {e}"));
     }
 }
@@ -139,16 +192,13 @@ pub extern "system" fn Java_com_mrsobakin_bark_BarkPipeline_nativePushAudio(
 #[no_mangle]
 pub extern "system" fn Java_com_mrsobakin_bark_BarkPipeline_nativeFinalize(
     mut env: JNIEnv,
-    _class: JClass,
-    handle: jlong,
+    this: JObject,
 ) -> jstring {
-    if handle == 0 {
-        throw_state(&mut env, "BarkPipeline not initialized");
+    let Some(handle) = get_live_handle(&mut env, &this) else {
         return std::ptr::null_mut();
-    }
+    };
 
-    // SAFETY: see deref_handle's safety contract — exclusive &mut for this
-    // call, no aliasing possible through JNI.
+    // SAFETY: the Java object serializes access to its native handle.
     let bark = unsafe { deref_handle(handle) };
 
     let text = match bark.finalize() {

@@ -31,50 +31,29 @@ import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONObject
 import java.io.IOException
 
-/**
- * Auto-records when the keyboard opens; tap to stop, transcribe, commit, and switch back.
- *
- * Audio capture, VAD, Opus encoding, HTTP upload, and transcription are all
- * handled in Rust via JNI.  Android is just the UI shell.
- */
 class BarkKeyboardService : InputMethodService() {
 
     companion object {
         private const val TAG = "BarkKeyboard"
         private const val PERMISSION_TIMEOUT_MS = 5_000L
 
-        /** One-shot channel for [PermissionBridgeActivity]. */
         val permissionResult = Channel<Boolean>(Channel.CONFLATED)
     }
-
-    // UI
 
     private lateinit var micButton: ImageButton
     private lateinit var levelIndicator: View
     private lateinit var transcribingIndicator: ImageView
 
-    // State
-
     private val audioCapture = AudioCapture()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
-    /** Non-null while a recording/transcribing flow is running. */
     private var currentJob: Job? = null
-
-    /** Switch back after the current flow completes? */
     private var switchBackPending = false
 
-    // Level-indicator state
-
     private var smoothedLevel = 0f
-    private val levelSmoothing = 0.3f           // lower = smoother
+    private val levelSmoothing = 0.3f
     private var levelAnimJob: Job? = null
-
-    // Spinner state
-
     private var spinnerAnimator: ObjectAnimator? = null
-
-    // IME lifecycle
 
     override fun onCreateInputView(): View {
         val v = layoutInflater.inflate(R.layout.keyboard, null)
@@ -120,8 +99,6 @@ class BarkKeyboardService : InputMethodService() {
         scope.cancel()
     }
 
-    // Permission
-
     private fun micGranted() =
         checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
 
@@ -137,18 +114,14 @@ class BarkKeyboardService : InputMethodService() {
         return withTimeoutOrNull(PERMISSION_TIMEOUT_MS) { permissionResult.receive() } ?: false
     }
 
-    // Mic button — tap toggles recording
-
     private fun onMicTapped() {
         when {
             audioCapture.isActive -> {
-                // Tapping while recording → stop and transcribe
                 Log.d(TAG, "manual stop")
                 audioCapture.cancel()
                 updateUi(State.Transcribing)
             }
             currentJob?.isActive == true -> {
-                // Already transcribing — ignore
                 Log.d(TAG, "tap ignored — flow in progress")
             }
             else -> {
@@ -158,10 +131,7 @@ class BarkKeyboardService : InputMethodService() {
         }
     }
 
-    // Recording → Transcribe → Commit → Switch back
-
     private suspend fun recordAndTranscribeFlow() {
-        // ---- 1. Permission ----
         if (!micGranted()) {
             updateUi(State.Idle)
             val granted = awaitMicPermission()
@@ -173,7 +143,6 @@ class BarkKeyboardService : InputMethodService() {
             }
         }
 
-        // ---- 2. Build config from settings ----
         val configJson: String
         try {
             configJson = buildConfigJson()
@@ -185,7 +154,6 @@ class BarkKeyboardService : InputMethodService() {
             return
         }
 
-        // ---- 3. Record + transcribe (everything in Rust via JNI) ----
         updateUi(State.Recording)
         val text: String?
         try {
@@ -208,7 +176,6 @@ class BarkKeyboardService : InputMethodService() {
 
         if (currentJob?.isActive != true) return
 
-        // ---- 4. Commit transcribed text ----
         if (!text.isNullOrBlank()) {
             commitText(text)
         }
@@ -217,7 +184,6 @@ class BarkKeyboardService : InputMethodService() {
         scheduleSwitchBack()
     }
 
-    /** Build the JSON config for [BarkConfig] from shared preferences. */
     private fun buildConfigJson(): String {
         val prefs = getSharedPreferences("bark", MODE_PRIVATE)
         val url = prefs.getString("endpoint_url", "").orEmpty()
@@ -258,22 +224,16 @@ class BarkKeyboardService : InputMethodService() {
         Log.d(TAG, "committed: \"$text\"")
     }
 
-    // ---- Level indicator (recording pulse) ----
-
     private fun onAudioLevel(raw: Float) {
-        // Exponential moving average on the IO thread; UI posted below.
         smoothedLevel = smoothedLevel * (1f - levelSmoothing) + raw * levelSmoothing
         val display = smoothedLevel
 
         levelIndicator.post {
             if (levelIndicator.visibility != View.VISIBLE) return@post
-            // 4th root: much more sensitive to quiet sounds than sqrt.
             val boosted = kotlin.math.sqrt(kotlin.math.sqrt(display.toDouble())).toFloat()
-            // Scale from 0.7x (silent) up to ~3.5x (loud).
             val s = 0.7f + boosted * 2.8f
             levelIndicator.scaleX = s
             levelIndicator.scaleY = s
-            // Subtle glow — max alpha 0.35 keeps it from washing out.
             levelIndicator.alpha = boosted * 0.35f
         }
     }
@@ -305,15 +265,12 @@ class BarkKeyboardService : InputMethodService() {
         levelAnimJob = null
     }
 
-    /** Synchronous teardown — must be called on main thread. */
     private fun resetLevelIndicator() {
         levelIndicator.visibility = View.GONE
         levelIndicator.scaleX = 0.7f
         levelIndicator.scaleY = 0.7f
         levelIndicator.alpha = 0f
     }
-
-    // ---- Spinner (transcribing state) ----
 
     private fun startSpinner() {
         micButton.visibility = View.INVISIBLE
@@ -336,8 +293,6 @@ class BarkKeyboardService : InputMethodService() {
         micButton.visibility = View.VISIBLE
     }
 
-    // Cleanup / switch back
-
     private fun abortWithDiscard() {
         currentJob?.cancel()
         audioCapture.cancel()
@@ -350,8 +305,6 @@ class BarkKeyboardService : InputMethodService() {
         switchToPreviousInputMethod()
     }
 
-    // UI — fully drives all visual state
-
     private sealed class State {
         object Recording : State()
         object Transcribing : State()
@@ -360,7 +313,6 @@ class BarkKeyboardService : InputMethodService() {
     }
 
     private fun updateUi(state: State) {
-        // Synchronous teardown — no post() or async calls
         stopSpinner()
         stopLevelAnimation()
         resetLevelIndicator()
