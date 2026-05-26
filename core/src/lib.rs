@@ -1,5 +1,3 @@
-#![feature(slice_as_array)]
-
 mod audio;
 mod bark;
 mod config;
@@ -7,6 +5,8 @@ mod engine;
 mod post;
 mod pre;
 mod util;
+
+pub const SAMPLE_RATE: u32 = 16_000;
 
 #[derive(Debug, thiserror::Error)]
 pub enum BarkError {

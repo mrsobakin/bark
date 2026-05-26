@@ -1,8 +1,7 @@
 use crate::config::VadConfig;
 use crate::util::chunker::Chunker;
+use crate::SAMPLE_RATE;
 use thiserror::Error;
-
-const SAMPLE_RATE: u32 = 16_000;
 
 mod fsm;
 mod silero;

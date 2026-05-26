@@ -1,9 +1,9 @@
 use super::EncodeError;
 use crate::util::chunker::Chunker;
+use crate::SAMPLE_RATE;
 use opus::{Application, Bitrate, Channels};
 use std::io::Write;
 
-const SAMPLE_RATE: u32 = 16_000;
 const CHANNELS: u8 = 1;
 const OPUS_FRAME_SIZE: usize = 320; // 20 ms at 16 kHz
 const GRANULE_PER_FRAME: u64 = 960; // 48 kHz Opus granule units

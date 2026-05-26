@@ -82,6 +82,7 @@ pub struct PostConfig {}
 pub struct EngineConfig {
     /// Full URL of the transcription endpoint,
     /// e.g. `https://api.groq.com/openai/v1/audio/transcriptions`.
+    #[serde(default = "default_endpoint")]
     pub endpoint: String,
 
     /// API key (sent as `Authorization: Bearer <key>`).
@@ -105,13 +106,17 @@ fn default_model() -> String {
     "whisper-large-v3-turbo".into()
 }
 
+fn default_endpoint() -> String {
+    "https://api.groq.com/openai/v1/audio/transcriptions".into()
+}
+
 impl Default for BarkConfig {
     fn default() -> Self {
         Self {
             pre: PreConfig::default(),
             post: PostConfig::default(),
             engine: EngineConfig {
-                endpoint: "https://api.groq.com/openai/v1/audio/transcriptions".into(),
+                endpoint: default_endpoint(),
                 api_key: String::new(),
                 model: default_model(),
                 language: None,
