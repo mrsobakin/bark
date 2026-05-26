@@ -34,7 +34,6 @@ env = { ANDROID_NDK = "${ANDROID_NDK_HOME}", CMAKE_POLICY_VERSION_MINIMUM = "3.5
 script = '''
 cargo ndk \
     -t "${ANDROID_ABI}" -P "${ANDROID_PLATFORM}" -o "${JNI_LIBS_DIR}" \
-    --link-libcxx-shared \
     --manifest-path jni/Cargo.toml \
     -- \
     build --profile "$CARGO_MAKE_CARGO_PROFILE"

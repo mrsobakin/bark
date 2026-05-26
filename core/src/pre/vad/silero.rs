@@ -1,32 +1,46 @@
-use super::{VadError, SAMPLE_RATE};
+use super::VadError;
+use std::io::Cursor;
+use std::sync::{LazyLock};
+
+use tract_nnef::prelude::*;
 
 pub const VAD_FRAME_SAMPLES: usize = 512;
 const VAD_STATE_LEN: usize = 2 * 1 * 128;
-const VAD_STATE_DIM: [i64; 3] = [2, 1, 128];
+const VAD_STATE_DIM: [usize; 3] = [2, 1, 128];
 const VAD_CONTEXT_SAMPLES: usize = 64;
-const SILERO_VAD_MODEL: &[u8] = include_bytes!("./silero_vad.onnx");
+const SILERO_MODEL_BYTES: &[u8] = include_bytes!("./silero_vad.nnef.tgz");
 
-impl From<ort::Error> for VadError {
-    fn from(value: ort::Error) -> Self {
+type SileroModel = TypedSimplePlan<Graph<TypedFact, Box<dyn TypedOp>>>;
+
+static SILERO_MODEL: LazyLock<Result<SileroModel, VadError>> = LazyLock::new(|| {
+    let mut model_bytes = Cursor::new(SILERO_MODEL_BYTES);
+
+    Ok(tract_nnef::nnef()
+        .with_tract_core()
+        .model_for_read(&mut model_bytes)?
+        .into_decluttered()?
+        .into_optimized()?
+        .into_runnable()?)
+});
+
+impl From<TractError> for VadError {
+    fn from(value: TractError) -> Self {
         Self(value.to_string())
     }
 }
 
 pub struct SileroVad {
-    session: ort::session::Session,
+    model: &'static SileroModel,
     state: Box<[f32]>,
     context: [f32; VAD_CONTEXT_SAMPLES],
 }
 
 impl SileroVad {
     pub fn load() -> Result<Self, VadError> {
-        let session = ort::session::Session::builder()
-            .map_err(|e| VadError(e.to_string()))?
-            .commit_from_memory(SILERO_VAD_MODEL)
-            .map_err(|e| VadError(e.to_string()))?;
+        let model = (&*SILERO_MODEL).as_ref().map_err(|e| VadError(e.0.to_owned()))?;
 
         Ok(Self {
-            session,
+            model,
             state: Box::new([0.0; VAD_STATE_LEN]),
             context: [0.0; VAD_CONTEXT_SAMPLES],
         })
@@ -37,8 +51,6 @@ impl SileroVad {
     }
 
     pub fn predict(&mut self, frame: &[i16]) -> Result<f32, VadError> {
-        use ort::value::Tensor;
-
         // 1. Prepare input
         debug_assert_eq!(frame.len(), VAD_FRAME_SAMPLES);
 
@@ -47,38 +59,18 @@ impl SileroVad {
         input.extend(frame.iter().map(|&s| s as f32 / 32768.0));
 
         let new_context = input.last_chunk::<VAD_CONTEXT_SAMPLES>().unwrap();
+
         self.context.clone_from_slice(new_context);
 
         // 2. Build tensors
-        let input_val = Tensor::from_array((
-            [1i64, input.len() as i64],
-            input,
-        ))?;
-
-        let state_val = Tensor::from_array((
-            VAD_STATE_DIM,
-            std::mem::replace(&mut self.state, Box::new([0.0; VAD_STATE_LEN])),
-        ))?;
-
-        let sr_val = Tensor::from_array((
-            [1i64],
-            vec![SAMPLE_RATE as i64],
-        ))?;
+        let input_val = Tensor::from_shape(&[1, input.len()], &input)?;
+        let state_val = Tensor::from_shape(&VAD_STATE_DIM, &*self.state)?;
 
         // 3. Run inference
-        let outputs = self.session.run(ort::inputs![input_val, state_val, sr_val])?;
+        let outputs = self.model.run(tvec![input_val.into(), state_val.into()])?;
 
-        let prob = *outputs.get("output")
-            .expect("output field should exist in outputs")
-            .try_extract_tensor::<f32>()?.1
-            .first()
-            .expect("output field is invalid");
-
-        let state = outputs.get("stateN")
-            .expect("stateN field should exist in outputs")
-            .try_extract_tensor::<f32>()?.1
-            .as_array::<{VAD_STATE_LEN}>()
-            .expect("stateN field is invalid");
+        let prob = outputs[0].as_slice::<f32>()?[0];
+        let state = outputs[1].as_slice::<f32>()?;
 
         self.state.clone_from_slice(state);
 
