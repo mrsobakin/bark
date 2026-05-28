@@ -29,13 +29,39 @@ pub struct PreConfig {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default)]
 pub struct AgcConfig {
-    /// Target loudness in dB.  -23 is the broadcast standard (EBU R128).
+    /// Target speech loudness in dBFS.
     pub target_db: f32,
+
+    /// Maximum gain boost allowed in dB.
+    pub max_gain_db: f32,
+
+    /// Gain attack time in ms.
+    pub attack_ms: f32,
+
+    /// Gain release time in ms.
+    pub release_ms: f32,
+
+    /// RMS smoothing window in ms.
+    pub rms_window_ms: f32,
+
+    /// Long-term RMS window in ms.
+    pub long_window_ms: f32,
+
+    /// High-pass filter cutoff in Hz.
+    pub high_pass_hz: f32,
 }
 
 impl Default for AgcConfig {
     fn default() -> Self {
-        Self { target_db: -23.0 }
+        Self {
+            target_db: -18.0,
+            max_gain_db: 20.0,
+            attack_ms: 30.0,
+            release_ms: 500.0,
+            rms_window_ms: 80.0,
+            long_window_ms: 1500.0,
+            high_pass_hz: 80.0,
+        }
     }
 }
 

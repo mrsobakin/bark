@@ -28,7 +28,7 @@ impl Bark {
 
     pub fn push_audio(&mut self, frames: &[i16]) -> Result<()> {
         let mut data = frames.to_vec();
-        if let Some(ref agc) = self.agc {
+        if let Some(ref mut agc) = self.agc {
             agc.process(&mut data);
         }
 
@@ -82,6 +82,7 @@ impl Bark {
 
     pub fn reset(&mut self) {
         self.vad.as_mut().map(VadProcessor::reset);
+        self.agc.as_mut().map(Agc::reset);
         self.encoder = None;
     }
 }

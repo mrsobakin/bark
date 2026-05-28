@@ -1,6 +1,6 @@
 use super::VadError;
 use std::io::Cursor;
-use std::sync::{LazyLock};
+use std::sync::LazyLock;
 
 use tract_nnef::prelude::*;
 
@@ -37,7 +37,9 @@ pub struct SileroVad {
 
 impl SileroVad {
     pub fn load() -> Result<Self, VadError> {
-        let model = (&*SILERO_MODEL).as_ref().map_err(|e| VadError(e.0.to_owned()))?;
+        let model = (&*SILERO_MODEL)
+            .as_ref()
+            .map_err(|e| VadError(e.0.to_owned()))?;
 
         Ok(Self {
             model,
