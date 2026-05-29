@@ -20,10 +20,16 @@ unsafe fn drop_handle(handle: jlong) {
 }
 
 fn get_handle(env: &mut JNIEnv, this: &JObject) -> Option<jlong> {
-    match env.get_field(this, HANDLE_FIELD, HANDLE_SIG).and_then(|v| v.j()) {
+    match env
+        .get_field(this, HANDLE_FIELD, HANDLE_SIG)
+        .and_then(|v| v.j())
+    {
         Ok(handle) => Some(handle),
         Err(e) => {
-            throw_state(env, &format!("Failed to read BarkPipeline native handle: {e}"));
+            throw_state(
+                env,
+                &format!("Failed to read BarkPipeline native handle: {e}"),
+            );
             None
         }
     }
@@ -33,7 +39,10 @@ fn set_handle(env: &mut JNIEnv, this: &JObject, handle: jlong) -> bool {
     match env.set_field(this, HANDLE_FIELD, HANDLE_SIG, JValue::Long(handle)) {
         Ok(()) => true,
         Err(e) => {
-            throw_state(env, &format!("Failed to store BarkPipeline native handle: {e}"));
+            throw_state(
+                env,
+                &format!("Failed to store BarkPipeline native handle: {e}"),
+            );
             false
         }
     }
@@ -112,12 +121,10 @@ pub extern "system" fn Java_com_mrsobakin_bark_BarkPipeline_nativeDestroy(
         return;
     };
 
-    if handle != 0 {
-        if set_handle(&mut env, &this, 0) {
-            // SAFETY: handle was produced by box_handle and has just been
-            // detached from the Java object, so this call owns it.
-            unsafe { drop_handle(handle) }
-        }
+    if handle != 0 && set_handle(&mut env, &this, 0) {
+        // SAFETY: handle was produced by box_handle and has just been
+        // detached from the Java object, so this call owns it.
+        unsafe { drop_handle(handle) }
     }
 }
 

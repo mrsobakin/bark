@@ -23,6 +23,7 @@ impl PidFile {
             .read(true)
             .write(true)
             .create(true)
+            .truncate(true)
             .open(&path)
             .with_context(|| format!("failed to open pidfile: {}", path.display()))?;
 

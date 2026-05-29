@@ -16,6 +16,6 @@ fn normalize_text(text: &str) -> String {
     out
 }
 
-pub fn postprocess(text: &str, config: &PostConfig) -> String {
+pub fn postprocess(text: &str, _config: &PostConfig) -> String {
     normalize_text(text)
 }

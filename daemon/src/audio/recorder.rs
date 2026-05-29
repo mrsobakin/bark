@@ -135,8 +135,7 @@ mod tests {
 
         let data = audio
             .into_iter()
-            .map(|x| x.to_le_bytes())
-            .flatten()
+            .flat_map(|x| x.to_le_bytes())
             .collect::<Vec<u8>>();
 
         std::fs::create_dir_all("test_output").unwrap();

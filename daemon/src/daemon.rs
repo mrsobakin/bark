@@ -198,11 +198,9 @@ impl SignalState {
     }
 
     fn wait_for_toggle(&self) -> anyhow::Result<bool> {
-        loop {
-            match self.rx.recv().context("signal thread exited")? {
-                ControlEvent::Toggle => return Ok(true),
-                ControlEvent::Shutdown => return Ok(false),
-            }
+        match self.rx.recv().context("signal thread exited")? {
+            ControlEvent::Toggle => Ok(true),
+            ControlEvent::Shutdown => Ok(false),
         }
     }
 }

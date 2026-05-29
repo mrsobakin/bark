@@ -118,7 +118,7 @@ impl<W: Write> InternalOpusEncoder<W> {
     }
 
     fn finish(mut self) -> Result<W, EncodeError> {
-        let packet = self.pending.take().unwrap_or_else(|| Vec::new());
+        let packet = self.pending.take().unwrap_or_default();
 
         // Technically opus packets of length 0 are considered corrupted.
         // We'll send them anyway for empty streams to singal error for decoder.
@@ -177,7 +177,7 @@ mod tests {
             left = tail;
         }
 
-        if left.len() != 0 {
+        if !left.is_empty() {
             feed(left);
         }
 

@@ -164,7 +164,7 @@ mod tests {
         assert!(out.is_empty());
 
         let out = fsm.process(true, &frame_of(6));
-        assert_eq!(out, vec![frame_of(4), frame_of(5), frame_of(6)].concat());
+        assert_eq!(out, [frame_of(4), frame_of(5), frame_of(6)].concat());
 
         // 4. Active speech passes through
         let out = fsm.process(true, &frame_of(7));

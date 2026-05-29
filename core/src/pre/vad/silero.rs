@@ -5,7 +5,7 @@ use std::sync::LazyLock;
 use tract_nnef::prelude::*;
 
 pub const VAD_FRAME_SAMPLES: usize = 512;
-const VAD_STATE_LEN: usize = 2 * 1 * 128;
+const VAD_STATE_LEN: usize = 256;
 const VAD_STATE_DIM: [usize; 3] = [2, 1, 128];
 const VAD_CONTEXT_SAMPLES: usize = 64;
 const SILERO_MODEL_BYTES: &[u8] = include_bytes!("./silero_vad.nnef.tgz");
@@ -37,7 +37,7 @@ pub struct SileroVad {
 
 impl SileroVad {
     pub fn load() -> Result<Self, VadError> {
-        let model = (&*SILERO_MODEL)
+        let model = (*SILERO_MODEL)
             .as_ref()
             .map_err(|e| VadError(e.0.to_owned()))?;
 
@@ -66,7 +66,7 @@ impl SileroVad {
 
         // 2. Build tensors
         let input_val = Tensor::from_shape(&[1, input.len()], &input)?;
-        let state_val = Tensor::from_shape(&VAD_STATE_DIM, &*self.state)?;
+        let state_val = Tensor::from_shape(&VAD_STATE_DIM, &self.state)?;
 
         // 3. Run inference
         let outputs = self.model.run(tvec![input_val.into(), state_val.into()])?;

@@ -99,7 +99,7 @@ impl Default for VadConfig {
 }
 
 /// Post-processing configuration.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
 pub struct PostConfig {}
 
@@ -149,11 +149,5 @@ impl Default for BarkConfig {
                 prompt: None,
             },
         }
-    }
-}
-
-impl Default for PostConfig {
-    fn default() -> Self {
-        Self {}
     }
 }
