@@ -2,41 +2,28 @@ use crate::audio::OpusEncoder;
 use crate::config::BarkConfig;
 use crate::engine::{TranscriptionEngine, WhisperClient};
 use crate::post;
-use crate::pre::vad::VadProcessor;
-use crate::pre::Agc;
+use crate::pre::Preprocessor;
 use crate::Result;
 
 pub struct Bark {
     config: BarkConfig,
     encoder: Option<OpusEncoder<Vec<u8>>>,
-    agc: Option<Agc>,
-    vad: Option<VadProcessor>,
+    preprocessor: Preprocessor,
 }
 
 impl Bark {
     pub fn new(config: BarkConfig) -> Result<Bark> {
-        let agc = config.pre.agc.as_ref().map(Agc::new);
-        let vad = config.pre.vad.as_ref().map(VadProcessor::new).transpose()?;
+        let preprocessor = Preprocessor::new(&config.pre)?;
 
         Ok(Self {
             config,
             encoder: None,
-            agc,
-            vad,
+            preprocessor,
         })
     }
 
     pub fn push_audio(&mut self, frames: &[i16]) -> Result<()> {
-        let mut data = frames.to_vec();
-        if let Some(ref mut agc) = self.agc {
-            agc.process(&mut data);
-        }
-
-        let speech = if let Some(ref mut vad) = self.vad {
-            vad.feed(&data)?
-        } else {
-            data
-        };
+        let speech = self.preprocessor.process(frames)?;
 
         if !speech.is_empty() {
             self.get_encoder()?.feed(&speech)?;
@@ -53,11 +40,9 @@ impl Bark {
     }
 
     pub fn finalize(&mut self) -> Result<String> {
-        if let Some(ref mut v) = self.vad {
-            let tail = v.finish()?;
-            if !tail.is_empty() {
-                self.get_encoder()?.feed(&tail)?;
-            }
+        let tail = self.preprocessor.finish()?;
+        if !tail.is_empty() {
+            self.get_encoder()?.feed(&tail)?;
         }
 
         let Some(encoder) = self.encoder.take() else {
@@ -81,8 +66,7 @@ impl Bark {
     }
 
     pub fn reset(&mut self) {
-        self.vad.as_mut().map(VadProcessor::reset);
-        self.agc.as_mut().map(Agc::reset);
+        self.preprocessor.reset();
         self.encoder = None;
     }
 }

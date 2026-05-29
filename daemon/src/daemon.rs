@@ -9,10 +9,10 @@ use bark_core::Bark;
 use signal_hook::consts::signal::{SIGINT, SIGTERM, SIGUSR1};
 use signal_hook::iterator::Signals;
 
+use crate::audio::recorder::{CallbackAction, Recorder, StopReason, Stopper};
 use crate::config::Config;
 use crate::indicator::{self, State};
 use crate::pidfile::PidFile;
-use crate::recorder::{CallbackAction, Recorder, StopReason, Stopper};
 use crate::typer;
 use crate::APP_NAME;
 
@@ -39,6 +39,8 @@ pub fn toggle(pidfile: &Path) -> anyhow::Result<()> {
 }
 
 pub fn run(config: Config) -> anyhow::Result<()> {
+    crate::config::validate_pipeline(&config.pipeline)?;
+
     let pidfile_path = config.daemon.pidfile.clone();
     let indicator_path = config.daemon.indicator_file.clone();
     let _pidfile = PidFile::acquire(pidfile_path.clone())?;

@@ -49,7 +49,6 @@ impl TryFrom<RawConfig> for Config {
     fn try_from(raw: RawConfig) -> anyhow::Result<Self> {
         let daemon = DaemonConfig::try_from(raw.daemon)?;
         let pipeline = raw.pipeline;
-        validate_pipeline(&pipeline)?;
         Ok(Self { daemon, pipeline })
     }
 }
@@ -80,7 +79,7 @@ impl TryFrom<RawDaemonConfig> for DaemonConfig {
     }
 }
 
-fn validate_pipeline(pipeline: &BarkConfig) -> anyhow::Result<()> {
+pub fn validate_pipeline(pipeline: &BarkConfig) -> anyhow::Result<()> {
     if pipeline.engine.api_key.is_empty() && pipeline.engine.endpoint.contains("groq.com") {
         bail!("Groq API key missing; set pipeline.engine.api_key");
     }
