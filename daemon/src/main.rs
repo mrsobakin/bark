@@ -3,12 +3,13 @@ mod config;
 mod daemon;
 mod indicator;
 mod pidfile;
-mod preview;
+mod transcribe;
 mod typer;
 
 use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
+use transcribe::TranscribeArgs;
 
 const APP_NAME: &str = "barkd";
 
@@ -29,7 +30,7 @@ fn main() -> anyhow::Result<()> {
     match cli.command.unwrap_or(Command::Daemon) {
         Command::Daemon => daemon::run(config),
         Command::Toggle => daemon::toggle(&config.daemon.pidfile),
-        Command::Preview => preview::run(config),
+        Command::Transcribe(args) => transcribe::run(config, args),
     }
 }
 
@@ -52,6 +53,6 @@ enum Command {
     /// Toggle daemon recording.
     Toggle,
 
-    /// Record, preprocess with config, and play back.
-    Preview,
+    /// Record once and output transcription or preview.
+    Transcribe(TranscribeArgs),
 }
