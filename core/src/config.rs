@@ -1,3 +1,4 @@
+use regex::Regex;
 use serde::Deserialize;
 
 /// Top-level configuration for the Bark pipeline.
@@ -7,8 +8,9 @@ pub struct BarkConfig {
     /// Pre-processing options (applied before encoding).
     pub pre: PreConfig,
 
-    /// Post-processing options (applied to the transcription text).
-    pub post: PostConfig,
+    /// Post-processing steps (applied to the transcription text).
+    #[serde(default = "default_post")]
+    pub post: Vec<PostStep>,
 
     /// Whisper / transcription engine.
     pub engine: EngineConfig,
@@ -98,10 +100,28 @@ impl Default for VadConfig {
     }
 }
 
-/// Post-processing configuration.
-#[derive(Debug, Clone, Default, Deserialize)]
-#[serde(default, deny_unknown_fields)]
-pub struct PostConfig {}
+fn default_post() -> Vec<PostStep> {
+    vec![PostStep::Normalize]
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum PostStep {
+    Normalize,
+    Regex {
+        #[serde(rename = "pattern", deserialize_with = "deserialize_regex")]
+        re: Regex,
+        with: String,
+    },
+}
+
+fn deserialize_regex<'de, D>(deserializer: D) -> Result<Regex, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let pattern = String::deserialize(deserializer)?;
+    Regex::new(&pattern).map_err(serde::de::Error::custom)
+}
 
 /// Whisper-compatible transcription engine configuration.
 #[derive(Debug, Clone, Deserialize)]
@@ -141,7 +161,7 @@ impl Default for BarkConfig {
     fn default() -> Self {
         Self {
             pre: PreConfig::default(),
-            post: PostConfig::default(),
+            post: default_post(),
             engine: EngineConfig {
                 endpoint: default_endpoint(),
                 api_key: String::new(),
@@ -152,3 +172,5 @@ impl Default for BarkConfig {
         }
     }
 }
+
+

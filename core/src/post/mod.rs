@@ -1,4 +1,4 @@
-use crate::config::PostConfig;
+use crate::config::PostStep;
 
 fn normalize_text(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
@@ -16,6 +16,17 @@ fn normalize_text(text: &str) -> String {
     out
 }
 
-pub fn postprocess(text: &str, _config: &PostConfig) -> String {
-    normalize_text(text)
+pub fn postprocess(text: &str, steps: &[PostStep]) -> String {
+    let mut text = text.to_string();
+    for step in steps {
+        text = apply(&text, step);
+    }
+    text
+}
+
+fn apply(text: &str, step: &PostStep) -> String {
+    match step {
+        PostStep::Normalize => normalize_text(text),
+        PostStep::Regex { re, with } => re.replace_all(text, with.as_str()).to_string(),
+    }
 }
