@@ -68,7 +68,7 @@ impl TryFrom<RawDaemonConfig> for DaemonConfig {
         let pidfile = raw
             .pidfile
             .unwrap_or_else(|| runtime_dir.join(format!("{APP_NAME}.pid")));
-        let timeout = Duration::from_secs_f64(raw.timeout.unwrap_or(raw.recorder.timeout).max(0.1));
+        let timeout = Duration::from_secs_f64(raw.recorder.timeout.max(0.1));
 
         Ok(Self {
             typer: raw.typer,
@@ -101,7 +101,6 @@ struct RawDaemonConfig {
     runtime_dir: Option<PathBuf>,
     indicator_file: Option<PathBuf>,
     pidfile: Option<PathBuf>,
-    timeout: Option<f64>,
     recorder: RawRecorderConfig,
 }
 
