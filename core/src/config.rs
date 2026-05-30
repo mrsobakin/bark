@@ -2,7 +2,7 @@ use serde::Deserialize;
 
 /// Top-level configuration for the Bark pipeline.
 #[derive(Debug, Clone, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct BarkConfig {
     /// Pre-processing options (applied before encoding).
     pub pre: PreConfig,
@@ -16,7 +16,7 @@ pub struct BarkConfig {
 
 /// Pre-processing configuration.
 #[derive(Debug, Clone, Default, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct PreConfig {
     /// Enable automatic gain control (loudness normalization).
     pub agc: Option<AgcConfig>,
@@ -27,7 +27,7 @@ pub struct PreConfig {
 
 /// AGC (automatic gain control) configuration.
 #[derive(Debug, Clone, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct AgcConfig {
     /// Target speech loudness in dBFS.
     pub target_db: f32,
@@ -67,7 +67,7 @@ impl Default for AgcConfig {
 
 /// VAD (voice-activity detection) configuration.
 #[derive(Debug, Clone, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct VadConfig {
     /// Speech probability threshold (0.0–1.0).
     pub threshold: f32,
@@ -100,11 +100,12 @@ impl Default for VadConfig {
 
 /// Post-processing configuration.
 #[derive(Debug, Clone, Default, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct PostConfig {}
 
 /// Whisper-compatible transcription engine configuration.
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct EngineConfig {
     /// Full URL of the transcription endpoint,
     /// e.g. `https://api.groq.com/openai/v1/audio/transcriptions`.

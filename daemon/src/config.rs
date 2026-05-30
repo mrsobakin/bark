@@ -88,14 +88,14 @@ pub fn validate_pipeline(pipeline: &BarkConfig) -> anyhow::Result<()> {
 }
 
 #[derive(Clone, Default, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 struct RawConfig {
     daemon: RawDaemonConfig,
     pipeline: BarkConfig,
 }
 
 #[derive(Clone, Default, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 struct RawDaemonConfig {
     typer: Vec<String>,
     runtime_dir: Option<PathBuf>,
@@ -106,7 +106,7 @@ struct RawDaemonConfig {
 }
 
 #[derive(Clone, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 struct RawRecorderConfig {
     timeout: f64,
 }
