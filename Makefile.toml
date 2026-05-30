@@ -36,7 +36,7 @@ cargo ndk \
     -t "${ANDROID_ABI}" -P "${ANDROID_PLATFORM}" -o "${JNI_LIBS_DIR}" \
     --manifest-path jni/Cargo.toml \
     -- \
-    build --profile "$CARGO_MAKE_CARGO_PROFILE"
+    build --release  # Always build .so in release
 '''
 
 [tasks.apk]
