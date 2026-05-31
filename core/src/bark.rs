@@ -1,13 +1,12 @@
-use crate::audio::OpusEncoder;
 use crate::config::BarkConfig;
-use crate::engine::{TranscriptionEngine, WhisperClient};
+use crate::engine::{OpenAIClient, TranscriptionEngine};
 use crate::post;
 use crate::pre::Preprocessor;
 use crate::Result;
 
 pub struct Bark {
     config: BarkConfig,
-    encoder: Option<OpusEncoder<Vec<u8>>>,
+    engine: Option<Box<dyn TranscriptionEngine>>,
     preprocessor: Preprocessor,
 }
 
@@ -17,7 +16,7 @@ impl Bark {
 
         Ok(Self {
             config,
-            encoder: None,
+            engine: None,
             preprocessor,
         })
     }
@@ -26,36 +25,30 @@ impl Bark {
         let speech = self.preprocessor.process(frames)?;
 
         if !speech.is_empty() {
-            self.get_encoder()?.feed(&speech)?;
+            self.get_engine()?.push_audio(&speech)?;
         }
 
         Ok(())
     }
 
-    fn get_encoder(&mut self) -> Result<&mut OpusEncoder<Vec<u8>>> {
-        if self.encoder.is_none() {
-            self.encoder = Some(OpusEncoder::new(Vec::new())?);
+    fn get_engine(&mut self) -> Result<&mut Box<dyn TranscriptionEngine>> {
+        if self.engine.is_none() {
+            self.engine = Some(Box::new(OpenAIClient::new(&self.config.engine)?));
         }
-        Ok(self.encoder.as_mut().unwrap())
+        Ok(self.engine.as_mut().unwrap())
     }
 
     pub fn finalize(&mut self) -> Result<String> {
         let tail = self.preprocessor.finish()?;
         if !tail.is_empty() {
-            self.get_encoder()?.feed(&tail)?;
+            self.get_engine()?.push_audio(&tail)?;
         }
 
-        let Some(encoder) = self.encoder.take() else {
+        let Some(engine) = self.engine.take() else {
             return Ok(String::new());
         };
 
-        let (audio, duration) = encoder.finish()?;
-        if duration < 0.5 {
-            return Ok(String::new());
-        }
-
-        let client = WhisperClient::new(&self.config.engine)?;
-        let text = client.transcribe(&audio)?;
+        let text = engine.finalize()?;
 
         if text.is_empty() {
             return Ok(String::new());
@@ -67,7 +60,6 @@ impl Bark {
 
     pub fn reset(&mut self) {
         self.preprocessor.reset();
-        self.encoder = None;
+        self.engine = None;
     }
 }
-

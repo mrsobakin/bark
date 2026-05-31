@@ -1,13 +1,17 @@
+use crate::audio::OpusEncoder;
 use crate::config::EngineConfig;
 use crate::engine::{TranscriptionEngine, TranscriptionError};
 use ureq::unversioned::multipart::{Form, Part};
 
-pub struct WhisperClient {
+const MIN_AUDIO_SECONDS: f32 = 0.5;
+
+pub struct OpenAIClient {
     http: ureq::Agent,
     config: EngineConfig,
+    encoder: OpusEncoder<Vec<u8>>,
 }
 
-impl WhisperClient {
+impl OpenAIClient {
     pub fn new(config: &EngineConfig) -> Result<Self, TranscriptionError> {
         let http: ureq::Agent = ureq::Agent::config_builder()
             .timeout_global(Some(std::time::Duration::from_secs(60)))
@@ -15,12 +19,19 @@ impl WhisperClient {
             .build()
             .into();
         let config = config.clone();
-        Ok(Self { http, config })
+        let encoder = OpusEncoder::new(Vec::new())?;
+        Ok(Self {
+            http,
+            config,
+            encoder,
+        })
     }
-}
 
-impl TranscriptionEngine for WhisperClient {
-    fn transcribe(&self, ogg_data: &[u8]) -> Result<String, TranscriptionError> {
+    fn transcribe_ogg(
+        http: &ureq::Agent,
+        config: &EngineConfig,
+        ogg_data: &[u8],
+    ) -> Result<String, TranscriptionError> {
         if ogg_data.is_empty() {
             return Ok(String::new());
         }
@@ -32,20 +43,20 @@ impl TranscriptionEngine for WhisperClient {
 
         let mut form = Form::new()
             .part("file", file_part)
-            .text("model", &self.config.model)
+            .text("model", &config.model)
             .text("response_format", "text");
 
-        if let Some(ref lang) = self.config.language {
+        if let Some(ref lang) = config.language {
             form = form.text("language", lang);
         }
-        if let Some(ref prompt) = self.config.prompt {
+        if let Some(ref prompt) = config.prompt {
             form = form.text("prompt", prompt);
         }
 
-        let mut req = self.http.post(&self.config.endpoint);
+        let mut req = http.post(&config.endpoint);
 
-        if !self.config.api_key.is_empty() {
-            req = req.header("Authorization", format!("Bearer {}", self.config.api_key));
+        if !config.api_key.is_empty() {
+            req = req.header("Authorization", format!("Bearer {}", config.api_key));
         }
 
         let mut resp = req.send(form)?;
@@ -62,5 +73,25 @@ impl TranscriptionEngine for WhisperClient {
 
         let text = resp.body_mut().read_to_string()?;
         Ok(text.trim().to_string())
+    }
+}
+
+impl TranscriptionEngine for OpenAIClient {
+    fn push_audio(&mut self, pcm: &[i16]) -> Result<(), TranscriptionError> {
+        self.encoder.feed(pcm)?;
+        Ok(())
+    }
+
+    fn finalize(self: Box<Self>) -> Result<String, TranscriptionError> {
+        let Self {
+            http,
+            config,
+            encoder,
+        } = *self;
+        let (audio, duration) = encoder.finish()?;
+        if duration < MIN_AUDIO_SECONDS {
+            return Ok(String::new());
+        }
+        Self::transcribe_ogg(&http, &config, &audio)
     }
 }
