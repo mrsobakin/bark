@@ -49,8 +49,8 @@ impl Bark {
             return Ok(String::new());
         };
 
-        let audio = encoder.finish()?;
-        if audio.is_empty() {
+        let (audio, duration) = encoder.finish()?;
+        if duration < 0.5 {
             return Ok(String::new());
         }
 
@@ -70,3 +70,4 @@ impl Bark {
         self.encoder = None;
     }
 }
+

@@ -26,7 +26,7 @@ impl<W: Write> OpusEncoder<W> {
         self.chunker.feed(pcm, |f| self.inner.encode(f))
     }
 
-    pub fn finish(mut self) -> Result<W, EncodeError> {
+    pub fn finish(mut self) -> Result<(W, f32), EncodeError> {
         self.chunker.finish(|f| self.inner.encode(f))?;
         self.inner.finish()
     }
@@ -117,7 +117,7 @@ impl<W: Write> InternalOpusEncoder<W> {
         Ok(())
     }
 
-    fn finish(mut self) -> Result<W, EncodeError> {
+    fn finish(mut self) -> Result<(W, f32), EncodeError> {
         let packet = self.pending.take().unwrap_or_default();
 
         // Technically opus packets of length 0 are considered corrupted.
@@ -130,7 +130,9 @@ impl<W: Write> InternalOpusEncoder<W> {
             self.granule_pos,
         )?;
 
-        Ok(self.ogg.into_inner())
+        let seconds = self.granule_pos as f32 / 48000 as f32;
+
+        Ok((self.ogg.into_inner(), seconds))
     }
 }
 
@@ -181,7 +183,7 @@ mod tests {
             feed(left);
         }
 
-        let out = encoder.finish().unwrap_or_else(|err| {
+        let (out, _) = encoder.finish().unwrap_or_else(|err| {
             panic!("failed to finish: {err}");
         });
 
