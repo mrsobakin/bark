@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::Context;
 
@@ -18,15 +18,27 @@ impl State {
     }
 }
 
-pub fn write(path: &Path, state: State) -> anyhow::Result<()> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-
-    fs::write(path, state.as_str())
-        .with_context(|| format!("failed to write indicator: {}", path.display()))
+pub struct Indicator {
+    path: PathBuf
 }
 
-pub fn clear(path: &Path) {
-    let _ = fs::remove_file(path);
+impl Indicator {
+    pub fn new(path: &Path) -> Self {
+        Self { path: path.to_path_buf() }
+    }
+
+    pub fn write(&self, state: State) -> anyhow::Result<()> {
+        if let Some(parent) = self.path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+
+        fs::write(&self.path, state.as_str())
+            .with_context(|| format!("failed to write indicator: {}", self.path.display()))
+    }
+}
+
+impl Drop for Indicator {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.path);
+    }
 }

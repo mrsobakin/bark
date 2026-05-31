@@ -11,10 +11,26 @@ use signal_hook::iterator::Signals;
 
 use crate::audio::recorder::{CallbackAction, Recorder, StopReason, Stopper};
 use crate::config::Config;
-use crate::indicator::{self, State};
-use crate::pidfile::PidFile;
+use crate::indicator::{Indicator, State};
+use crate::pidfile::{PidFile, AcquireResult};
 use crate::typer;
 use crate::APP_NAME;
+
+pub fn run(config: Config, oneshot: bool) -> anyhow::Result<()> {
+    let pidfile_path = config.daemon.pidfile.clone();
+
+    match PidFile::acquire(pidfile_path)? {
+        AcquireResult::AlreadyRunning(pid) => toggle_pid(pid),
+        AcquireResult::Acquired(_pidfile) => {
+            let daemon = Daemon::new(config)?;
+            if oneshot {
+                daemon.run_once()
+            } else {
+                daemon.run_loop()
+            }
+        }
+    }
+}
 
 pub fn toggle(pidfile: &Path) -> anyhow::Result<()> {
     let pid = fs::read_to_string(pidfile)
@@ -24,12 +40,13 @@ pub fn toggle(pidfile: &Path) -> anyhow::Result<()> {
         .trim()
         .parse()
         .with_context(|| format!("invalid pidfile: {}", pidfile.display()))?;
-
-    let exists = unsafe { libc::kill(pid, 0) };
-    if exists != 0 {
-        anyhow::bail!("daemon not running (stale pidfile: {})", pidfile.display());
+    if pid <= 0 {
+        anyhow::bail!("invalid pid in pidfile: {}", pidfile.display());
     }
+    toggle_pid(pid)
+}
 
+fn toggle_pid(pid: libc::pid_t) -> anyhow::Result<()> {
     let rc = unsafe { libc::kill(pid, SIGUSR1) };
     if rc != 0 {
         Err(std::io::Error::last_os_error()).context("failed to send SIGUSR1")
@@ -38,43 +55,86 @@ pub fn toggle(pidfile: &Path) -> anyhow::Result<()> {
     }
 }
 
-pub fn run(config: Config) -> anyhow::Result<()> {
-    crate::config::validate_pipeline(&config.pipeline)?;
+struct Daemon {
+    config: Config,
+    signals: SignalState,
+}
 
-    let pidfile_path = config.daemon.pidfile.clone();
-    let indicator_path = config.daemon.indicator_file.clone();
-    let _pidfile = PidFile::acquire(pidfile_path.clone())?;
+impl Daemon {
+    fn new(config: Config) -> anyhow::Result<Self> {
+        crate::config::validate_pipeline(&config.pipeline)?;
+        let signals = SignalState::install()?;
+        Ok(Self { config, signals })
+    }
 
-    let signals = SignalState::install()?;
+    fn run_once(self) -> anyhow::Result<()> {
+        let indicator = Indicator::new(&self.config.daemon.indicator_file);
+        let (recorder, stopper) = Recorder::new();
 
-    eprintln!("{APP_NAME} v{} ready", env!("CARGO_PKG_VERSION"));
-    eprintln!("PID      : {}", std::process::id());
-    eprintln!("Pidfile  : {}", pidfile_path.display());
-    eprintln!("Indicator: {}", indicator_path.display());
-    eprintln!("Typer    : {}", config.daemon.typer.join(" "));
-    eprintln!("Model    : {}", config.pipeline.engine.model);
-    eprintln!(
-        "Language : {}",
-        config
-            .pipeline
-            .engine
-            .language
-            .as_deref()
-            .unwrap_or("auto-detect")
-    );
+        self.signals.set_stopper(Some(stopper));
+        let _ = indicator.write(State::Recording);
+        let result = self.record(recorder);
 
-    while !signals.shutdown() {
-        if !signals.wait_for_toggle()? {
-            break;
+        self.signals.set_stopper(None);
+        let _ = indicator.write(State::Transcribing);
+
+        let (bark, stop_reason) = result?;
+        self.finish(bark, stop_reason)
+    }
+
+    fn run_loop(self) -> anyhow::Result<()> {
+        let indicator_path = &self.config.daemon.indicator_file;
+
+        eprintln!("{APP_NAME} v{} ready", env!("CARGO_PKG_VERSION"));
+        eprintln!("PID      : {}", std::process::id());
+        eprintln!("Indicator: {}", indicator_path.display());
+        eprintln!("Typer    : {}", self.config.daemon.typer.join(" "));
+        eprintln!("Model    : {}", self.config.pipeline.engine.model);
+        eprintln!(
+            "Language : {}",
+            self.config
+                .pipeline
+                .engine
+                .language
+                .as_deref()
+                .unwrap_or("auto-detect")
+        );
+
+        while !self.signals.shutdown() {
+            if !self.signals.wait_for_toggle()? {
+                break;
+            }
+
+            let indicator = Indicator::new(&self.config.daemon.indicator_file);
+
+            let _ = indicator.write(State::Recording);
+            let (recorder, stopper) = Recorder::new();
+            self.signals.set_stopper(Some(stopper));
+
+            let result = self.record(recorder);
+            self.signals.set_stopper(None);
+
+            match result {
+                Ok((bark, stop_reason)) => {
+                    let _ = indicator.write(State::Transcribing);
+                    if let Err(err) = self.finish(bark, stop_reason) {
+                        eprintln!("Transcription failed: {err:#}");
+                    }
+                }
+                Err(err) => {
+                    eprintln!("{err:#}");
+                }
+            }
         }
 
-        indicator::write(&indicator_path, State::Recording)?;
-        let mut bark = Bark::new(config.pipeline.clone())?;
-        let (recorder, stopper) = Recorder::new();
-        let audio_error = Arc::new(Mutex::new(None::<String>));
-        signals.set_stopper(Some(stopper));
+        Ok(())
+    }
 
-        let stop_reason = recorder.record(config.daemon.timeout, |audio| {
+    fn record(&self, recorder: Recorder) -> anyhow::Result<(Bark, StopReason)> {
+        let mut bark = Bark::new(self.config.pipeline.clone())?;
+        let audio_error = Arc::new(Mutex::new(None::<String>));
+
+        let stop_reason = recorder.record(self.config.daemon.timeout, |audio| {
             match bark.push_audio(audio) {
                 Ok(()) => CallbackAction::Continue,
                 Err(e) => {
@@ -82,59 +142,35 @@ pub fn run(config: Config) -> anyhow::Result<()> {
                     CallbackAction::Stop
                 }
             }
-        });
-
-        signals.set_stopper(None);
-        let stop_reason = match stop_reason {
-            Ok(stop_reason) => stop_reason,
-            Err(err) => {
-                indicator::clear(&indicator_path);
-                return Err(err);
-            }
-        };
-
-        if signals.shutdown() {
-            indicator::clear(&indicator_path);
-            break;
-        }
+        }).context("recording failed")?;
 
         if let Some(err) = audio_error.lock().unwrap().take() {
-            indicator::clear(&indicator_path);
-            eprintln!("Audio processing failed: {err}");
-            continue;
+            anyhow::bail!("audio processing failed: {err}");
         }
 
-        indicator::write(&indicator_path, State::Transcribing)?;
-        if let Err(err) = finish(&config, bark, stop_reason) {
-            eprintln!("Transcription failed: {err:#}");
+        Ok((bark, stop_reason))
+    }
+
+    fn finish(&self, mut bark: Bark, stop_reason: StopReason) -> anyhow::Result<()> {
+        if stop_reason == StopReason::Timeout {
+            eprintln!(
+                "Recording cancelled: exceeded {:.1}s timeout",
+                self.config.daemon.timeout.as_secs_f64()
+            );
+            return Ok(());
         }
 
-        indicator::clear(&indicator_path);
+        let text = bark.finalize()?;
+        let text = text.trim();
+
+        if text.is_empty() {
+            eprintln!("No speech detected");
+            return Ok(());
+        }
+
+        eprintln!("Final transcription: {text:?}");
+        typer::type_text(&self.config.daemon.typer, &text)
     }
-
-    indicator::clear(&indicator_path);
-    Ok(())
-}
-
-fn finish(config: &Config, mut bark: Bark, stop_reason: StopReason) -> anyhow::Result<()> {
-    if stop_reason == StopReason::Timeout {
-        eprintln!(
-            "Recording cancelled: exceeded {:.1}s timeout",
-            config.daemon.timeout.as_secs_f64()
-        );
-        return Ok(());
-    }
-
-    let text = bark.finalize()?;
-    let text = text.trim().replace('\n', " ");
-
-    if text.is_empty() {
-        eprintln!("No speech detected");
-        return Ok(());
-    }
-
-    eprintln!("Final transcription: {text:?}");
-    typer::type_text(&config.daemon.typer, &text)
 }
 
 enum ControlEvent {

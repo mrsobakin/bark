@@ -27,8 +27,8 @@ fn main() -> anyhow::Result<()> {
     let config_path = cli.config.unwrap_or_else(default_config_path);
     let config = config::load(&config_path)?;
 
-    match cli.command.unwrap_or(Command::Daemon) {
-        Command::Daemon => daemon::run(config),
+    match cli.command.unwrap_or(Command::Daemon(DaemonArgs { oneshot: false })) {
+        Command::Daemon(args) => daemon::run(config, args.oneshot),
         Command::Toggle => daemon::toggle(&config.daemon.pidfile),
         Command::Transcribe(args) => transcribe::run(config, args),
     }
@@ -48,11 +48,19 @@ struct Cli {
 #[derive(Debug, Subcommand)]
 enum Command {
     /// Run background daemon.
-    Daemon,
+    Daemon(DaemonArgs),
 
     /// Toggle daemon recording.
     Toggle,
 
     /// Record once and output transcription or preview.
     Transcribe(TranscribeArgs),
+}
+
+#[derive(Debug, clap::Args)]
+pub struct DaemonArgs {
+    /// Do one transcription cycle then exit.
+    /// If a daemon is already running, toggle it instead.
+    #[arg(long)]
+    pub oneshot: bool,
 }
