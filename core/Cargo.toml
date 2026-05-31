@@ -7,7 +7,7 @@ edition.workspace = true
 thiserror = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-reqwest = { version = "0.12", default-features = false, features = ["multipart", "rustls-tls", "blocking"] }
+ureq = { version = "3", features = ["multipart"] }
 opus = "0.3"
 ogg = "0.9"
 tract-nnef = "0.22.1"

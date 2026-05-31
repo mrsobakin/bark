@@ -7,8 +7,8 @@ pub use whisper::WhisperClient;
 #[error("{0}")]
 pub struct TranscriptionError(String);
 
-impl From<reqwest::Error> for TranscriptionError {
-    fn from(value: reqwest::Error) -> Self {
+impl From<ureq::Error> for TranscriptionError {
+    fn from(value: ureq::Error) -> Self {
         Self(value.to_string())
     }
 }

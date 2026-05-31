@@ -17,7 +17,7 @@ pub enum BarkError {
     Vad(#[from] crate::pre::vad::VadError),
 
     #[error("HTTP request error: {0}")]
-    Http(#[from] reqwest::Error),
+    Http(#[from] ureq::Error),
 
     #[error("Transcription failed: {0}")]
     Transcription(#[from] crate::engine::TranscriptionError),
