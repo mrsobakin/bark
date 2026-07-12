@@ -109,7 +109,11 @@ pub extern "system" fn Java_com_mrsobakin_bark_BarkPipeline_nativeCreate(
         }
     };
 
-    set_handle(&mut env, &this, box_handle(bark));
+    let handle = box_handle(bark);
+    if !set_handle(&mut env, &this, handle) {
+        // SAFETY: storing the handle failed, so it was never exposed to Java.
+        unsafe { drop_handle(handle) }
+    }
 }
 
 #[no_mangle]
