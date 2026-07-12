@@ -19,12 +19,14 @@ impl State {
 }
 
 pub struct Indicator {
-    path: PathBuf
+    path: PathBuf,
 }
 
 impl Indicator {
     pub fn new(path: &Path) -> Self {
-        Self { path: path.to_path_buf() }
+        Self {
+            path: path.to_path_buf(),
+        }
     }
 
     pub fn write(&self, state: State) -> anyhow::Result<()> {

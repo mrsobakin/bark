@@ -12,7 +12,7 @@ use signal_hook::iterator::Signals;
 use crate::audio::recorder::{CallbackAction, Recorder, StopReason, Stopper};
 use crate::config::Config;
 use crate::indicator::{Indicator, State};
-use crate::pidfile::{PidFile, AcquireResult};
+use crate::pidfile::{AcquireResult, PidFile};
 use crate::typer;
 use crate::APP_NAME;
 
@@ -71,11 +71,16 @@ impl Daemon {
         let indicator = Indicator::new(&self.config.daemon.indicator_file);
         let (recorder, stopper) = Recorder::new();
 
-        self.signals.set_stopper(Some(stopper));
+        if !self.signals.install_stopper(stopper) {
+            return Ok(());
+        }
         let _ = indicator.write(State::Recording);
         let result = self.record(recorder);
 
         self.signals.set_stopper(None);
+        if self.signals.shutdown() {
+            return Ok(());
+        }
         let _ = indicator.write(State::Transcribing);
 
         let (bark, stop_reason) = result?;
@@ -107,12 +112,17 @@ impl Daemon {
 
             let indicator = Indicator::new(&self.config.daemon.indicator_file);
 
-            let _ = indicator.write(State::Recording);
             let (recorder, stopper) = Recorder::new();
-            self.signals.set_stopper(Some(stopper));
+            if !self.signals.install_stopper(stopper) {
+                break;
+            }
+            let _ = indicator.write(State::Recording);
 
             let result = self.record(recorder);
             self.signals.set_stopper(None);
+            if self.signals.shutdown() {
+                break;
+            }
 
             match result {
                 Ok((bark, stop_reason)) => {
@@ -134,15 +144,17 @@ impl Daemon {
         let mut bark = Bark::new(self.config.pipeline.clone())?;
         let audio_error = Arc::new(Mutex::new(None::<String>));
 
-        let stop_reason = recorder.record(self.config.daemon.timeout, |audio| {
-            match bark.push_audio(audio) {
-                Ok(()) => CallbackAction::Continue,
-                Err(e) => {
-                    *audio_error.lock().unwrap() = Some(e.to_string());
-                    CallbackAction::Stop
+        let stop_reason = recorder
+            .record(self.config.daemon.timeout, |audio| {
+                match bark.push_audio(audio) {
+                    Ok(()) => CallbackAction::Continue,
+                    Err(e) => {
+                        *audio_error.lock().unwrap() = Some(e.to_string());
+                        CallbackAction::Stop
+                    }
                 }
-            }
-        }).context("recording failed")?;
+            })
+            .context("recording failed")?;
 
         if let Some(err) = audio_error.lock().unwrap().take() {
             anyhow::bail!("audio processing failed: {err}");
@@ -169,7 +181,7 @@ impl Daemon {
         }
 
         eprintln!("Final transcription: {text:?}");
-        typer::type_text(&self.config.daemon.typer, &text)
+        typer::type_text(&self.config.daemon.typer, text)
     }
 }
 
@@ -227,6 +239,18 @@ impl SignalState {
 
     fn shutdown(&self) -> bool {
         self.shutdown.load(Ordering::SeqCst)
+    }
+
+    fn install_stopper(&self, stopper: Stopper) -> bool {
+        let mut current = self.stopper.lock().unwrap();
+        *current = Some(stopper);
+
+        if self.shutdown() {
+            current.take().unwrap().stop();
+            false
+        } else {
+            true
+        }
     }
 
     fn set_stopper(&self, stopper: Option<Stopper>) {

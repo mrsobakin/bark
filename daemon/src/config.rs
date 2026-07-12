@@ -68,7 +68,11 @@ impl TryFrom<RawDaemonConfig> for DaemonConfig {
         let pidfile = raw
             .pidfile
             .unwrap_or_else(|| runtime_dir.join(format!("{APP_NAME}.pid")));
-        let timeout = Duration::from_secs_f64(raw.recorder.timeout.max(0.1));
+        if !raw.recorder.timeout.is_finite() || raw.recorder.timeout < 0.1 {
+            bail!("daemon.recorder.timeout must be finite and at least 0.1 seconds");
+        }
+        let timeout = Duration::try_from_secs_f64(raw.recorder.timeout)
+            .context("daemon.recorder.timeout is too large")?;
 
         Ok(Self {
             typer: raw.typer,
@@ -136,6 +140,18 @@ fn warn_if_world_readable(_path: &Path) {}
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rejects_invalid_timeout() {
+        for timeout in [f64::INFINITY, f64::NAN, 0.0] {
+            let raw = RawDaemonConfig {
+                typer: vec!["cat".into()],
+                recorder: RawRecorderConfig { timeout },
+                ..RawDaemonConfig::default()
+            };
+            assert!(DaemonConfig::try_from(raw).is_err());
+        }
+    }
 
     #[test]
     fn fills_defaults_and_parses_native_config() {

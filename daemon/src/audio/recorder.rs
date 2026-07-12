@@ -87,7 +87,9 @@ impl Recorder {
         stream.play().context("failed to start capture stream")?;
         eprintln!("Recording started");
 
-        let deadline = Instant::now() + timeout;
+        let deadline = Instant::now()
+            .checked_add(timeout)
+            .context("recording timeout is too large")?;
 
         let result = loop {
             let Some(remaining) = deadline.checked_duration_since(Instant::now()) else {

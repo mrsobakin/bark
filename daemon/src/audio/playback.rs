@@ -3,7 +3,7 @@ use std::sync::mpsc::channel;
 use anyhow::{anyhow, Context};
 use bark_core::SAMPLE_RATE;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::{SampleFormat, StreamConfig};
+use cpal::{SampleFormat, StreamConfig, StreamError};
 
 pub fn play(samples: &[i16]) -> anyhow::Result<()> {
     if samples.is_empty() {
@@ -23,10 +23,13 @@ pub fn play(samples: &[i16]) -> anyhow::Result<()> {
     let audio = resample_mono_to_output(samples, &config);
     let total = audio.len();
     let mut pos = 0usize;
-    let (done_tx, done_rx) = channel();
+    let (done_tx, done_rx) = channel::<Result<(), String>>();
+    let error_tx = done_tx.clone();
     let mut done_tx = Some(done_tx);
 
-    let err_fn = |err| eprintln!("Playback error: {err}");
+    let err_fn = move |err: StreamError| {
+        let _ = error_tx.send(Err(err.to_string()));
+    };
     let stream = match sample_format {
         SampleFormat::F32 => device.build_output_stream(
             &config,
@@ -58,7 +61,8 @@ pub fn play(samples: &[i16]) -> anyhow::Result<()> {
     stream.play().context("failed to start playback stream")?;
     done_rx
         .recv()
-        .context("playback stream stopped unexpectedly")?;
+        .context("playback stream stopped unexpectedly")?
+        .map_err(anyhow::Error::msg)?;
     drop(stream);
     Ok(())
 }
@@ -68,7 +72,7 @@ fn write_output<T>(
     audio: &[f32],
     pos: &mut usize,
     total: usize,
-    done_tx: &mut Option<std::sync::mpsc::Sender<()>>,
+    done_tx: &mut Option<std::sync::mpsc::Sender<Result<(), String>>>,
     convert: impl Fn(f32) -> T,
 ) {
     for sample in out {
@@ -78,7 +82,7 @@ fn write_output<T>(
         } else {
             *sample = convert(0.0);
             if let Some(tx) = done_tx.take() {
-                let _ = tx.send(());
+                let _ = tx.send(Ok(()));
             }
         }
     }

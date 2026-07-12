@@ -27,7 +27,10 @@ fn main() -> anyhow::Result<()> {
     let config_path = cli.config.unwrap_or_else(default_config_path);
     let config = config::load(&config_path)?;
 
-    match cli.command.unwrap_or(Command::Daemon(DaemonArgs { oneshot: false })) {
+    match cli
+        .command
+        .unwrap_or(Command::Daemon(DaemonArgs { oneshot: false }))
+    {
         Command::Daemon(args) => daemon::run(config, args.oneshot),
         Command::Toggle => daemon::toggle(&config.daemon.pidfile),
         Command::Transcribe(args) => transcribe::run(config, args),
