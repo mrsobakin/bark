@@ -1,18 +1,22 @@
 package com.mrsobakin.bark
 
+import android.annotation.SuppressLint
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
+import android.os.SystemClock
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
+import java.io.IOException
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.sqrt
 
 class AudioCapture {
 
     companion object {
-        private const val TAG = "BarkAudio"
         private const val SAMPLE_RATE = 16000
-
         private const val BUF_SAMPLES = 512
     }
 
@@ -21,54 +25,79 @@ class AudioCapture {
 
     val isActive: Boolean get() = active
 
+    private val generation = AtomicLong()
     private var cachedPipeline: BarkPipeline? = null
     private var cachedConfigJson: String? = null
 
+    @SuppressLint("MissingPermission")
     suspend fun recordOnce(
         maxDurationSec: Int = 300,
         configJson: String,
         onLevel: ((Float) -> Unit)? = null,
-    ): String? = withContext(Dispatchers.IO) {
-        val bufferSize = AudioRecord.getMinBufferSize(
-            SAMPLE_RATE,
-            AudioFormat.CHANNEL_IN_MONO,
-            AudioFormat.ENCODING_PCM_16BIT,
-        )
+    ): String? {
+        val session = generation.incrementAndGet()
 
-        val record = AudioRecord(
-            MediaRecorder.AudioSource.VOICE_RECOGNITION,
-            SAMPLE_RATE,
-            AudioFormat.CHANNEL_IN_MONO,
-            AudioFormat.ENCODING_PCM_16BIT,
-            bufferSize,
-        )
+        return withContext(Dispatchers.IO) {
+            var record: AudioRecord? = null
 
-        record.startRecording()
-        active = true
+            try {
+                currentCoroutineContext().ensureActive()
 
-        val pipeline = initPipeline(configJson)
+                val bufferSize = AudioRecord.getMinBufferSize(
+                    SAMPLE_RATE,
+                    AudioFormat.CHANNEL_IN_MONO,
+                    AudioFormat.ENCODING_PCM_16BIT,
+                )
+                if (bufferSize <= 0) {
+                    throw IOException("Unsupported audio capture configuration: $bufferSize")
+                }
 
-        try {
-            val buf = ShortArray(BUF_SAMPLES)
-            val deadlineMs = System.currentTimeMillis() + maxDurationSec * 1000L
+                record = AudioRecord(
+                    MediaRecorder.AudioSource.VOICE_RECOGNITION,
+                    SAMPLE_RATE,
+                    AudioFormat.CHANNEL_IN_MONO,
+                    AudioFormat.ENCODING_PCM_16BIT,
+                    bufferSize,
+                )
+                val pipeline = initPipeline(configJson)
 
-            while (active && System.currentTimeMillis() < deadlineMs) {
-                val nRead = record.read(buf, 0, buf.size)
-                if (nRead <= 0) continue
+                if (generation.get() != session) return@withContext null
+                record.startRecording()
+                if (generation.get() != session) return@withContext null
+                active = true
 
-                onLevel?.invoke(computeRmsLevel(buf, nRead))
-                pipeline.pushAudio(buf, nRead)
+                val buf = ShortArray(BUF_SAMPLES)
+                val deadlineMs = SystemClock.elapsedRealtime() + maxDurationSec * 1000L
+
+                while (
+                    active &&
+                    generation.get() == session &&
+                    SystemClock.elapsedRealtime() < deadlineMs
+                ) {
+                    val nRead = record.read(buf, 0, buf.size)
+                    if (nRead < 0) throw IOException("Audio capture failed: $nRead")
+                    if (nRead == 0) continue
+
+                    onLevel?.invoke(computeRmsLevel(buf, nRead))
+                    pipeline.pushAudio(buf, nRead)
+                }
+
+                if (generation.get() != session) return@withContext null
+                pipeline.finalize().ifBlank { null }
+            } finally {
+                active = false
+                runCatching { record?.stop() }
+                record?.release()
             }
-
-            return@withContext pipeline.finalize().ifBlank { null }
-        } finally {
-            active = false
-            runCatching { record.stop() }
-            record.release()
         }
     }
 
+    fun stop() {
+        active = false
+    }
+
     fun cancel() {
+        generation.incrementAndGet()
         active = false
     }
 

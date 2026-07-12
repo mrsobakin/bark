@@ -24,10 +24,11 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONObject
 import java.io.IOException
 
@@ -35,7 +36,6 @@ class BarkKeyboardService : InputMethodService() {
 
     companion object {
         private const val TAG = "BarkKeyboard"
-        private const val PERMISSION_TIMEOUT_MS = 5_000L
 
         val permissionResult = Channel<Boolean>(Channel.CONFLATED)
     }
@@ -48,6 +48,8 @@ class BarkKeyboardService : InputMethodService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     private var currentJob: Job? = null
+    private var inputViewActive = false
+    private var restartPending = false
     private var switchBackPending = false
 
     private var smoothedLevel = 0f
@@ -69,16 +71,25 @@ class BarkKeyboardService : InputMethodService() {
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
         Log.d(TAG, "onStartInputView restarting=$restarting")
+        inputViewActive = true
         switchBackPending = true
         updateUi(State.Idle)
+        launchRecordingFlow()
+    }
 
-        if (currentJob?.isActive == true) return
-        currentJob = scope.launch { recordAndTranscribeFlow() }
+    override fun onFinishInputView(finishingInput: Boolean) {
+        super.onFinishInputView(finishingInput)
+        Log.d(TAG, "onFinishInputView finishingInput=$finishingInput")
+        inputViewActive = false
+        restartPending = false
+        abortWithDiscard()
     }
 
     override fun onFinishInput() {
         super.onFinishInput()
         Log.d(TAG, "onFinishInput")
+        inputViewActive = false
+        restartPending = false
         abortWithDiscard()
     }
 
@@ -94,8 +105,13 @@ class BarkKeyboardService : InputMethodService() {
 
     override fun onDestroy() {
         super.onDestroy()
+        val job = currentJob
         abortWithDiscard()
-        audioCapture.cleanup()
+        if (job == null || job.isCompleted) {
+            audioCapture.cleanup()
+        } else {
+            job.invokeOnCompletion { audioCapture.cleanup() }
+        }
         scope.cancel()
     }
 
@@ -111,22 +127,22 @@ class BarkKeyboardService : InputMethodService() {
             }
         )
 
-        return withTimeoutOrNull(PERMISSION_TIMEOUT_MS) { permissionResult.receive() } ?: false
+        return permissionResult.receive()
     }
 
     private fun onMicTapped() {
         when {
             audioCapture.isActive -> {
                 Log.d(TAG, "manual stop")
-                audioCapture.cancel()
+                audioCapture.stop()
                 updateUi(State.Transcribing)
             }
-            currentJob?.isActive == true -> {
+            currentJob?.isCompleted == false -> {
                 Log.d(TAG, "tap ignored — flow in progress")
             }
             else -> {
                 Log.d(TAG, "manual start")
-                currentJob = scope.launch { recordAndTranscribeFlow() }
+                launchRecordingFlow()
             }
         }
     }
@@ -174,7 +190,7 @@ class BarkKeyboardService : InputMethodService() {
             return
         }
 
-        if (currentJob?.isActive != true) return
+        currentCoroutineContext().ensureActive()
 
         if (!text.isNullOrBlank()) {
             commitText(text)
@@ -293,10 +309,25 @@ class BarkKeyboardService : InputMethodService() {
         micButton.visibility = View.VISIBLE
     }
 
+    private fun launchRecordingFlow() {
+        if (currentJob?.isCompleted == false) {
+            restartPending = true
+            return
+        }
+
+        restartPending = false
+        val job = scope.launch { recordAndTranscribeFlow() }
+        currentJob = job
+        job.invokeOnCompletion {
+            scope.launch {
+                if (restartPending && inputViewActive) launchRecordingFlow()
+            }
+        }
+    }
+
     private fun abortWithDiscard() {
         currentJob?.cancel()
         audioCapture.cancel()
-        currentJob = null
     }
 
     private fun scheduleSwitchBack() {
