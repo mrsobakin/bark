@@ -64,9 +64,12 @@ impl OpenAIClient {
         if !resp.status().is_success() {
             let status = resp.status();
 
-            let mut body = resp.body_mut().read_to_string()?;
-            body.truncate(200);
-            let snippet = body.replace('\n', " ");
+            let body = resp.body_mut().read_to_string()?;
+            let snippet: String = body
+                .chars()
+                .take(200)
+                .collect::<String>()
+                .replace('\n', " ");
 
             return Err(TranscriptionError(format!("HTTP {status}: {snippet}")));
         }

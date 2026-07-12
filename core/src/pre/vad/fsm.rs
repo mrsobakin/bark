@@ -18,8 +18,11 @@ pub struct VadFSM {
 
 impl VadFSM {
     pub fn new(config: &VadConfig) -> Self {
-        let ms_to_frames =
-            |ms: u32| -> u32 { ms * SAMPLE_RATE / (VAD_FRAME_SAMPLES as u32 * 1000) };
+        let ms_to_frames = |ms: u32| -> u32 {
+            let samples = u64::from(ms) * u64::from(SAMPLE_RATE);
+            let samples_per_frame_ms = VAD_FRAME_SAMPLES as u64 * 1000;
+            samples.div_ceil(samples_per_frame_ms) as u32
+        };
 
         let attack_frames = ms_to_frames(config.attack_ms);
 
@@ -73,11 +76,7 @@ impl VadFSM {
 
             out
         } else {
-            if self.attack_buffer.len() == self.attack_frames as usize {
-                self.attack_buffer.pop_front();
-            }
-            self.attack_buffer.push_back(frame.to_vec());
-
+            self.buffer_attack_frame(frame);
             vec![]
         }
     }
@@ -94,10 +93,7 @@ impl VadFSM {
             }
             frame.to_vec()
         } else {
-            if self.attack_buffer.len() == self.attack_frames as usize {
-                self.attack_buffer.pop_front();
-            }
-            self.attack_buffer.push_back(frame.to_vec());
+            self.buffer_attack_frame(frame);
 
             if self.silence_written < self.max_silence_frames {
                 self.silence_written += 1;
@@ -106,6 +102,16 @@ impl VadFSM {
                 vec![]
             }
         }
+    }
+
+    fn buffer_attack_frame(&mut self, frame: &[i16]) {
+        if self.attack_frames == 0 {
+            return;
+        }
+        if self.attack_buffer.len() >= self.attack_frames as usize {
+            self.attack_buffer.pop_front();
+        }
+        self.attack_buffer.push_back(frame.to_vec());
     }
 }
 
@@ -119,6 +125,21 @@ mod tests {
 
     fn is_filled_with(frame: &[i16], expected: i16) -> bool {
         (frame.len() == VAD_FRAME_SAMPLES) && frame.iter().all(|&s| s == expected)
+    }
+
+    #[test]
+    fn zero_attack_does_not_buffer_audio() {
+        let config = VadConfig {
+            attack_ms: 0,
+            ..VadConfig::default()
+        };
+        let mut fsm = VadFSM::new(&config);
+
+        for _ in 0..100 {
+            fsm.process(false, &frame_of(0));
+        }
+
+        assert!(fsm.attack_buffer.is_empty());
     }
 
     #[test]

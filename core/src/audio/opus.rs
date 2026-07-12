@@ -130,7 +130,7 @@ impl<W: Write> InternalOpusEncoder<W> {
             self.granule_pos,
         )?;
 
-        let seconds = self.granule_pos as f32 / 48000 as f32;
+        let seconds = self.granule_pos as f32 / 48000_f32;
 
         Ok((self.ogg.into_inner(), seconds))
     }

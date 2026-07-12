@@ -1,7 +1,7 @@
 mod openai;
 
-use thiserror::Error;
 pub use openai::OpenAIClient;
+use thiserror::Error;
 
 #[derive(Error, Debug)]
 #[error("{0}")]
