@@ -59,7 +59,7 @@ impl Default for AgcConfig {
             target_db: -18.0,
             max_gain_db: 20.0,
             attack_ms: 30.0,
-            release_ms: 500.0,
+            release_ms: 250.0,
             rms_window_ms: 80.0,
             long_window_ms: 1500.0,
             high_pass_hz: 80.0,
