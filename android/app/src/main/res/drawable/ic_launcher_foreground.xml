@@ -2,18 +2,77 @@
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
-    android:viewportWidth="108"
-    android:viewportHeight="108">
+    android:viewportWidth="512"
+    android:viewportHeight="512">
     <group
-        android:scaleX="2"
-        android:scaleY="2"
-        android:translateX="30"
-        android:translateY="30">
+        android:pivotX="256"
+        android:pivotY="256"
+        android:scaleX="0.675"
+        android:scaleY="0.675"
+        android:translateX="10.1">
         <path
-            android:fillColor="#FFFFFF"
-            android:pathData="M12,14c1.66,0 3,-1.34 3,-3V5c0,-1.66 -1.34,-3 -3,-3S9,3.34 9,5v6C9,12.66 10.34,14 12,14z" />
+            android:fillColor="@android:color/transparent"
+            android:pathData="M350.10974,179.56264C315.10374,155.29377 268.33102,157.50003 209.79158,186.18142L119.77615,168.97258C109.92152,166.76632 104.77358,170.44343 104.33233,180.00389L104.77358,205.59651C105.65609,215.45114 108.89194,222.36409 114.48113,226.33536C137.72041,242.80877 163.31303,258.10551 191.25899,272.22557C179.05102,282.22728 158.018,293.40567 128.15994,305.76073C138.31987,340.1599 190.12804,329.28924 224.3529,337.53088L263.18308,398.86492"
+            android:strokeColor="@color/launcher_foreground"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:strokeWidth="14" />
         <path
-            android:fillColor="#FFFFFF"
-            android:pathData="M17,11c0,2.76 -2.24,5 -5,5s-5,-2.24 -5,-5H5c0,3.53 2.61,6.43 6,6.92V21h2v-3.08c3.39,-0.49 6,-3.39 6,-6.92H17z" />
+            android:fillColor="@android:color/transparent"
+            android:pathData="M404.16313,243.54419L431.30013,299.14195"
+            android:strokeColor="@color/launcher_foreground"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:strokeWidth="14" />
+        <path
+            android:fillColor="@android:color/transparent"
+            android:pathData="M431.30013,299.14195L263.18308,398.86492"
+            android:strokeColor="@color/launcher_foreground"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:strokeWidth="14" />
+        <path
+            android:fillColor="@android:color/transparent"
+            android:pathData="M321.14602,241.82584L384.38016,114.49135L405.60257,174.69371C410.94427,187.83139 411.66612,203.279 407.76813,221.03653L399.10591,263.04825"
+            android:strokeColor="@color/launcher_foreground"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:strokeWidth="14" />
+        <path
+            android:fillColor="@android:color/transparent"
+            android:pathData="M39.50693,216.46761L83.93774,230.14419"
+            android:strokeColor="@color/launcher_foreground"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:strokeWidth="14" />
+        <path
+            android:fillColor="@android:color/transparent"
+            android:pathData="M36.533469,267.81706L82.169874,264.78724"
+            android:strokeColor="@color/launcher_foreground"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:strokeWidth="14" />
+        <path
+            android:fillColor="@android:color/transparent"
+            android:pathData="M46.101809,317.39634L86.946131,300.93964"
+            android:strokeColor="@color/launcher_foreground"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:strokeWidth="14" />
+        <path
+            android:fillColor="@android:color/transparent"
+            android:pathData="M321.14602,241.82584L399.10591,263.04825"
+            android:strokeColor="@color/launcher_foreground"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:strokeWidth="14" />
+        <path
+            android:fillColor="@color/launcher_foreground"
+            android:fillType="nonZero"
+            android:pathData="M292.71686,169.61598C265.17659,170.19068 238.79292,179.80714 214.14907,191.43826C211.92892,192.59069 209.45994,193.07837 207.04919,192.27795C187.2422,188.77132 167.51302,184.84822 147.74897,181.0999C145.622,183.06611 144.43296,186.05109 142.29878,188.16562C134.66124,196.96763 123.27487,201.42885 111.96452,203.14863C110.98588,204.78979 111.79245,207.20331 112.02842,209.09848C112.84442,213.81594 114.91583,218.53868 119.06333,221.22756C142.55065,238.22511 167.85423,252.51985 193.49979,265.96788C196.44207,266.93914 198.09421,269.96145 197.78667,272.96912C197.51897,276.74258 193.60703,278.596 191.08077,280.81438C174.6575,292.46985 156.15776,300.75734 137.90932,309.00078C136.52074,310.12202 138.64066,311.67446 139.25832,312.65206C146.33437,320.87504 157.64314,323.19121 167.85814,324.73975C186.42803,327.37168 205.40002,326.84987 223.78561,330.59589C226.0577,331.16416 228.8335,331.727 229.82497,334.2143C241.90987,352.37271 253.28714,370.98857 265.09697,389.32553C266.76069,389.73112 268.28019,387.60952 269.87612,387.1013C320.50645,357.13562 371.12555,327.14514 421.63492,296.97523C422.44174,295.44815 420.72708,293.70999 420.35359,292.20024C415.95287,282.84942 411.51625,273.49038 406.6779,264.36468C405.11746,263.99658 405.22168,266.4372 404.2212,267.21413C402.92676,269.08075 400.63975,269.94798 398.44114,269.2512C384.48021,266.39023 370.85459,262.09567 357.05975,258.5251C343.97185,254.88633 330.79273,251.51757 317.7799,247.64434C314.67609,245.80984 313.51444,241.35145 315.68601,238.35341C324.28712,219.8486 333.85062,201.789 342.54964,183.32308C342.0276,181.59821 339.54276,181.23826 338.21013,180.1923C324.40012,172.39743 308.4724,169.28464 292.71686,169.61598ZM265.75844,195.7362C274.1584,195.46231 281.83301,202.67378 282.39781,211.04365C283.3818,220.15516 275.48727,228.92107 266.29893,228.87759C257.80772,229.27984 249.6885,222.2298 249.36481,213.6429C248.63348,206.39072 253.48301,198.75046 260.64235,196.60855C262.28947,196.05709 264.02044,195.75185 265.75844,195.7362Z"
+            android:strokeColor="@color/launcher_foreground"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:strokeWidth="3.2" />
     </group>
 </vector>

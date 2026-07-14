@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="launcher_background">#65558F</color>
+    <color name="launcher_background">#000000</color>
+    <color name="launcher_foreground">#FFFFFF</color>
     <color name="bark_primary">#D0BCFF</color>
     <color name="bark_on_primary">#381E72</color>
     <color name="bark_primary_container">#4F378B</color>
