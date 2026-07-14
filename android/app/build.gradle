@@ -3,6 +3,10 @@ plugins {
     id 'org.jetbrains.kotlin.android'
 }
 
+def signingKeyFile = rootProject.file('../signing-key.jks')
+def signingPassword = providers.environmentVariable('SIGNING_PASSWORD').orNull
+def releaseSigningAvailable = signingKeyFile.isFile() && signingPassword != null
+
 android {
     namespace 'com.mrsobakin.bark'
     compileSdk 36
@@ -19,10 +23,24 @@ android {
         }
     }
 
+    signingConfigs {
+        if (releaseSigningAvailable) {
+            release {
+                storeFile signingKeyFile
+                storePassword signingPassword
+                keyAlias 'bark'
+                keyPassword signingPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
             minifyEnabled true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            if (releaseSigningAvailable) {
+                signingConfig signingConfigs.release
+            }
         }
     }
 
@@ -36,6 +54,23 @@ android {
     }
 
 
+}
+
+def validateReleaseSigning = tasks.register('validateReleaseSigning') {
+    doLast {
+        if (signingPassword == null) {
+            throw new GradleException('SIGNING_PASSWORD is required for release builds')
+        }
+        if (!signingKeyFile.isFile()) {
+            throw new GradleException("Signing key not found: ${signingKeyFile}")
+        }
+    }
+}
+
+tasks.configureEach {
+    if (name == 'preReleaseBuild') {
+        dependsOn validateReleaseSigning
+    }
 }
 
 dependencies {

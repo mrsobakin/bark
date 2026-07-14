@@ -1,3 +1,7 @@
 target/
 test_output/
 __pycache__/
+
+# Signing
+*.jks
+*.keystore
