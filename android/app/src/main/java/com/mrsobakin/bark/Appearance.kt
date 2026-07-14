@@ -3,8 +3,6 @@ package com.mrsobakin.bark
 import android.content.Context
 import com.google.android.material.color.DynamicColors
 
-const val PREF_AGC = "audio_agc"
-
 object Appearance {
     const val PREF_DYNAMIC_COLORS = "appearance_dynamic_colors"
 

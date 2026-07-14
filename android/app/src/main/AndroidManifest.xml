@@ -27,7 +27,7 @@
                 android:resource="@xml/method" />
         </service>
 
-        <!-- Activity for configuring the endpoint URL -->
+        <!-- App settings -->
         <activity
             android:name=".SettingsActivity"
             android:exported="true"

@@ -218,16 +218,19 @@ class BarkKeyboardService : InputMethodService() {
             if (prompt.isNotEmpty()) put("prompt", prompt)
         }
 
-        val vad = JSONObject().apply {
-            put("threshold", 0.3)
-            put("min_speech_ms", 100)
-            put("min_silence_ms", 150)
-            put("max_silence_ms", 500)
-            put("attack_ms", 200)
-        }
-
         val pre = JSONObject().apply {
-            put("vad", vad)
+            if (prefs.getBoolean(PREF_VAD, true)) {
+                put(
+                    "vad",
+                    JSONObject().apply {
+                        put("threshold", 0.3)
+                        put("min_speech_ms", 100)
+                        put("min_silence_ms", 150)
+                        put("max_silence_ms", 500)
+                        put("attack_ms", 200)
+                    },
+                )
+            }
             if (prefs.getBoolean(PREF_AGC, false)) {
                 put(
                     "agc",
@@ -244,8 +247,13 @@ class BarkKeyboardService : InputMethodService() {
             }
         }
 
+        val postprocessors = PipelineSettings.decodePostProcessors(
+            prefs.getString(PREF_POST_PROCESSORS, null),
+        )
+
         return JSONObject().apply {
             put("pre", pre)
+            put("post", PipelineSettings.postProcessorsJson(postprocessors))
             put("engine", engine)
         }.toString()
     }

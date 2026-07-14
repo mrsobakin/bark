@@ -1,8 +1,8 @@
-use jni::objects::{JObject, JShortArray, JString, JValue, ReleaseMode};
+use jni::objects::{JClass, JObject, JShortArray, JString, JValue, ReleaseMode};
 use jni::sys::{jint, jlong, jstring};
 use jni::JNIEnv;
 
-use bark_core::{Bark, BarkConfig};
+use bark_core::{Bark, BarkConfig, PostStep};
 
 const HANDLE_FIELD: &str = "nativeHandle";
 const HANDLE_SIG: &str = "J";
@@ -68,6 +68,38 @@ fn throw_arg(env: &mut JNIEnv, msg: &str) {
 
 fn throw_state(env: &mut JNIEnv, msg: &str) {
     throw_new(env, "java/lang/IllegalStateException", msg);
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_mrsobakin_bark_BarkPipeline_nativeValidateRegex(
+    mut env: JNIEnv,
+    _class: JClass,
+    pattern: JString,
+) -> jstring {
+    let pattern: String = match env.get_string(&pattern) {
+        Ok(s) => s.into(),
+        Err(_) => {
+            throw_arg(&mut env, "Failed to read regex pattern");
+            return std::ptr::null_mut();
+        }
+    };
+
+    let step = serde_json::json!({
+        "type": "regex",
+        "pattern": pattern,
+        "with": "",
+    });
+    let Err(error) = serde_json::from_value::<PostStep>(step) else {
+        return std::ptr::null_mut();
+    };
+
+    match env.new_string(error.to_string()) {
+        Ok(message) => message.into_raw(),
+        Err(_) => {
+            throw_state(&mut env, "Failed to create regex error string");
+            std::ptr::null_mut()
+        }
+    }
 }
 
 #[no_mangle]

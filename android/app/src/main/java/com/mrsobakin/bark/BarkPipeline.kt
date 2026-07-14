@@ -8,6 +8,11 @@ class BarkPipeline(
         init {
             System.loadLibrary("bark_jni")
         }
+
+        fun regexError(pattern: String): String? = nativeValidateRegex(pattern)
+
+        @JvmStatic
+        private external fun nativeValidateRegex(pattern: String): String?
     }
 
     private var nativeHandle: Long = 0
