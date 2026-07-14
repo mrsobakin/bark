@@ -9,6 +9,7 @@ pub struct OpenAIClient {
     http: ureq::Agent,
     config: EngineConfig,
     encoder: OpusEncoder<Vec<u8>>,
+    has_signal: bool,
 }
 
 impl OpenAIClient {
@@ -24,6 +25,7 @@ impl OpenAIClient {
             http,
             config,
             encoder,
+            has_signal: false,
         })
     }
 
@@ -81,6 +83,10 @@ impl OpenAIClient {
 
 impl TranscriptionEngine for OpenAIClient {
     fn push_audio(&mut self, pcm: &[i16]) -> Result<(), TranscriptionError> {
+        if !self.has_signal {
+            self.has_signal = pcm.iter().any(|&sample| sample != 0);
+        }
+
         self.encoder.feed(pcm)?;
         Ok(())
     }
@@ -90,11 +96,40 @@ impl TranscriptionEngine for OpenAIClient {
             http,
             config,
             encoder,
+            has_signal,
         } = *self;
+        if !has_signal {
+            return Ok(String::new());
+        }
+
         let (audio, duration) = encoder.finish()?;
         if duration < MIN_AUDIO_SECONDS {
             return Ok(String::new());
         }
+
         Self::transcribe_ogg(&http, &config, &audio)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn does_not_submit_digital_silence() {
+        let config = EngineConfig {
+            endpoint: "not a URL".into(),
+            api_key: String::new(),
+            model: "test".into(),
+            language: None,
+            prompt: None,
+        };
+        let mut client = OpenAIClient::new(&config).unwrap();
+
+        client
+            .push_audio(&vec![0; crate::SAMPLE_RATE as usize])
+            .unwrap();
+
+        assert_eq!(Box::new(client).finalize().unwrap(), "");
     }
 }
