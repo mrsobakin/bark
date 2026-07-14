@@ -1,74 +1,82 @@
 package com.mrsobakin.bark
 
-import android.app.Activity
 import android.os.Bundle
-import android.view.View
-import android.widget.Button
-import android.widget.EditText
-import android.widget.TextView
+import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.edit
+import androidx.core.net.toUri
+import com.google.android.material.color.DynamicColors
+import com.google.android.material.materialswitch.MaterialSwitch
+import com.google.android.material.snackbar.Snackbar
+import com.google.android.material.textfield.TextInputEditText
+import com.google.android.material.textfield.TextInputLayout
 
-class SettingsActivity : Activity() {
+class SettingsActivity : AppCompatActivity() {
 
-    private lateinit var urlInput: EditText
-    private lateinit var modelInput: EditText
-    private lateinit var apiKeyInput: EditText
-    private lateinit var promptInput: EditText
-    private lateinit var saveStatus: TextView
+    private lateinit var urlLayout: TextInputLayout
+    private lateinit var urlInput: TextInputEditText
+    private lateinit var modelInput: TextInputEditText
+    private lateinit var apiKeyInput: TextInputEditText
+    private lateinit var promptInput: TextInputEditText
+    private lateinit var automaticGain: MaterialSwitch
+    private lateinit var dynamicColors: MaterialSwitch
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (Appearance.dynamicColors(this)) {
+            DynamicColors.applyToActivityIfAvailable(this)
+        }
         setContentView(R.layout.activity_settings)
 
+        urlLayout = findViewById(R.id.endpointLayout)
         urlInput = findViewById(R.id.endpointUrl)
         modelInput = findViewById(R.id.modelName)
         apiKeyInput = findViewById(R.id.apiKey)
         promptInput = findViewById(R.id.initialPrompt)
-        saveStatus = findViewById(R.id.saveStatus)
-        val saveBtn = findViewById<Button>(R.id.saveButton)
+        automaticGain = findViewById(R.id.automaticGain)
+        dynamicColors = findViewById(R.id.dynamicColors)
 
         val prefs = getSharedPreferences("bark", MODE_PRIVATE)
-        prefs.getString("endpoint_url", "")?.let { url ->
-            if (url.isNotEmpty()) urlInput.setText(url)
-        }
-        prefs.getString("model", "whisper-large-v3-turbo")?.let { model ->
-            modelInput.setText(model)
-        }
-        prefs.getString("api_key", "")?.let { key ->
-            if (key.isNotEmpty()) apiKeyInput.setText(key)
-        }
-        prefs.getString("prompt", "")?.let { prompt ->
-            if (prompt.isNotEmpty()) promptInput.setText(prompt)
-        }
+        urlInput.setText(prefs.getString("endpoint_url", ""))
+        modelInput.setText(prefs.getString("model", "whisper-large-v3-turbo"))
+        apiKeyInput.setText(prefs.getString("api_key", ""))
+        promptInput.setText(prefs.getString("prompt", ""))
+        automaticGain.isChecked = prefs.getBoolean(PREF_AGC, false)
+        dynamicColors.isChecked = Appearance.dynamicColors(this)
 
-        saveBtn.setOnClickListener { saveSettings() }
+        urlInput.setOnFocusChangeListener { _, hasFocus ->
+            if (hasFocus) urlLayout.error = null
+        }
+        findViewById<com.google.android.material.button.MaterialButton>(R.id.saveButton)
+            .setOnClickListener { saveSettings() }
     }
 
     private fun saveSettings() {
-        val url = urlInput.text.toString().trim()
-        val model = modelInput.text.toString().trim()
-        val apiKey = apiKeyInput.text.toString().trim()
-        val prompt = promptInput.text.toString().trim()
-        when {
-            url.isEmpty() -> showStatus("URL cannot be empty", success = false)
-            !url.startsWith("http://") && !url.startsWith("https://") ->
-                showStatus("URL must start with http:// or https://", success = false)
-            else -> {
-                getSharedPreferences("bark", MODE_PRIVATE)
-                    .edit()
-                    .putString("endpoint_url", url)
-                    .putString("model", model.ifEmpty { "whisper-large-v3-turbo" })
-                    .putString("api_key", apiKey)
-                    .putString("prompt", prompt)
-                    .apply()
-                showStatus(getString(R.string.saved), success = true)
-            }
+        val url = urlInput.text?.toString()?.trim().orEmpty()
+        val model = modelInput.text?.toString()?.trim().orEmpty()
+        val apiKey = apiKeyInput.text?.toString()?.trim().orEmpty()
+        val prompt = promptInput.text?.toString()?.trim().orEmpty()
+
+        if (!isHttpUrl(url)) {
+            urlLayout.error = getString(R.string.invalid_url)
+            urlInput.requestFocus()
+            return
         }
+
+        getSharedPreferences("bark", MODE_PRIVATE).edit {
+            putString("endpoint_url", url)
+            putString("model", model.ifEmpty { "whisper-large-v3-turbo" })
+            putString("api_key", apiKey)
+            putString("prompt", prompt)
+            putBoolean(PREF_AGC, automaticGain.isChecked)
+            putBoolean(Appearance.PREF_DYNAMIC_COLORS, dynamicColors.isChecked)
+        }
+
+        urlLayout.error = null
+        Snackbar.make(urlInput, R.string.saved, Snackbar.LENGTH_SHORT).show()
     }
 
-    private fun showStatus(msg: String, success: Boolean) {
-        saveStatus.text = msg
-        saveStatus.setTextColor(if (success) 0xFF4CAF50.toInt() else 0xFFE53935.toInt())
-        saveStatus.visibility = View.VISIBLE
-        saveStatus.postDelayed({ saveStatus.visibility = View.GONE }, 3000)
+    private fun isHttpUrl(value: String): Boolean {
+        val uri = value.toUri()
+        return uri.scheme in setOf("http", "https") && !uri.host.isNullOrBlank()
     }
 }

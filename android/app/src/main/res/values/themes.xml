@@ -1,12 +1,37 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.Bark" parent="android:Theme.Material.NoActionBar" />
-
-    <style name="Theme.Bark.Settings" parent="android:Theme.Material.Light.NoActionBar">
-        <item name="android:colorPrimary">@color/primary</item>
+    <style name="Theme.Bark" parent="Theme.Material3Expressive.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/bark_primary</item>
+        <item name="colorOnPrimary">@color/bark_on_primary</item>
+        <item name="colorPrimaryContainer">@color/bark_primary_container</item>
+        <item name="colorOnPrimaryContainer">@color/bark_on_primary_container</item>
+        <item name="colorSecondary">@color/bark_secondary</item>
+        <item name="colorOnSecondary">@color/bark_on_secondary</item>
+        <item name="colorSecondaryContainer">@color/bark_secondary_container</item>
+        <item name="colorOnSecondaryContainer">@color/bark_on_secondary_container</item>
+        <item name="colorTertiary">@color/bark_tertiary</item>
+        <item name="colorOnTertiary">@color/bark_on_tertiary</item>
+        <item name="colorTertiaryContainer">@color/bark_tertiary_container</item>
+        <item name="colorOnTertiaryContainer">@color/bark_on_tertiary_container</item>
+        <item name="colorError">@color/bark_error</item>
+        <item name="colorOnError">@color/bark_on_error</item>
+        <item name="colorErrorContainer">@color/bark_error_container</item>
+        <item name="colorOnErrorContainer">@color/bark_on_error_container</item>
+        <item name="android:colorBackground">@color/bark_background</item>
+        <item name="colorOnBackground">@color/bark_on_background</item>
+        <item name="colorSurface">@color/bark_surface</item>
+        <item name="colorOnSurface">@color/bark_on_surface</item>
+        <item name="colorSurfaceVariant">@color/bark_surface_variant</item>
+        <item name="colorOnSurfaceVariant">@color/bark_on_surface_variant</item>
+        <item name="colorOutline">@color/bark_outline</item>
+        <item name="android:navigationBarColor">?attr/colorSurface</item>
+        <item name="android:statusBarColor">?attr/colorSurface</item>
+        <item name="android:windowActionModeOverlay">true</item>
     </style>
 
-    <style name="Theme.Bark.Translucent" parent="android:Theme.Material.NoActionBar">
+    <style name="Theme.Bark.Settings" parent="Theme.Bark" />
+
+    <style name="Theme.Bark.Translucent" parent="Theme.Bark">
         <item name="android:windowIsTranslucent">true</item>
         <item name="android:windowBackground">@android:color/transparent</item>
         <item name="android:windowNoTitle">true</item>

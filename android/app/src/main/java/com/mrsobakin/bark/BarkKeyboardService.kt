@@ -1,22 +1,19 @@
 package com.mrsobakin.bark
 
 import android.Manifest
-import android.animation.ObjectAnimator
-import android.animation.ValueAnimator
+import android.annotation.SuppressLint
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.inputmethodservice.InputMethodService
-import android.net.Uri
-import android.provider.Settings
 import android.util.Log
+import android.view.ContextThemeWrapper
 import android.view.KeyEvent
 import android.view.View
-import android.view.animation.LinearInterpolator
 import android.view.inputmethod.EditorInfo
-import android.widget.ImageButton
-import android.widget.ImageView
 import android.widget.Toast
+import androidx.interpolator.view.animation.FastOutLinearInInterpolator
+import com.google.android.material.button.MaterialButton
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -27,7 +24,6 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 import java.io.IOException
@@ -40,9 +36,8 @@ class BarkKeyboardService : InputMethodService() {
         val permissionResult = Channel<Boolean>(Channel.CONFLATED)
     }
 
-    private lateinit var micButton: ImageButton
-    private lateinit var levelIndicator: View
-    private lateinit var transcribingIndicator: ImageView
+    private lateinit var micButton: MaterialButton
+    private lateinit var audioVisualizer: AudioReactiveBlobView
 
     private val audioCapture = AudioCapture()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -51,26 +46,30 @@ class BarkKeyboardService : InputMethodService() {
     private var inputViewActive = false
     private var restartPending = false
     private var switchBackPending = false
+    private var appearanceSignature = ""
 
-    private var smoothedLevel = 0f
-    private val levelSmoothing = 0.3f
-    private var levelAnimJob: Job? = null
-    private var spinnerAnimator: ObjectAnimator? = null
-
+    @SuppressLint("InflateParams")
+    @Suppress("DEPRECATION")
     override fun onCreateInputView(): View {
-        val v = layoutInflater.inflate(R.layout.keyboard, null)
-        micButton = v.findViewById(R.id.recordButton)
-        levelIndicator = v.findViewById(R.id.levelIndicator)
-        transcribingIndicator = v.findViewById(R.id.transcribingIndicator)
+        val themedContext = Appearance.wrap(ContextThemeWrapper(this, R.style.Theme_Bark))
+        val view = layoutInflater.cloneInContext(themedContext).inflate(R.layout.keyboard, null)
+
+        micButton = view.findViewById(R.id.recordButton)
+        audioVisualizer = view.findViewById(R.id.audioVisualizer)
+        appearanceSignature = currentAppearanceSignature()
+
         micButton.setOnClickListener { onMicTapped() }
 
-        window.window?.setNavigationBarColor(Color.BLACK)
-        return v
+        window.window?.navigationBarColor = Color.BLACK
+        return view
     }
 
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
         Log.d(TAG, "onStartInputView restarting=$restarting")
+        if (appearanceSignature != currentAppearanceSignature()) {
+            setInputView(onCreateInputView())
+        }
         inputViewActive = true
         switchBackPending = true
         updateUi(State.Idle)
@@ -82,6 +81,7 @@ class BarkKeyboardService : InputMethodService() {
         Log.d(TAG, "onFinishInputView finishingInput=$finishingInput")
         inputViewActive = false
         restartPending = false
+        audioVisualizer.stop()
         abortWithDiscard()
     }
 
@@ -90,6 +90,7 @@ class BarkKeyboardService : InputMethodService() {
         Log.d(TAG, "onFinishInput")
         inputViewActive = false
         restartPending = false
+        if (::audioVisualizer.isInitialized) audioVisualizer.stop()
         abortWithDiscard()
     }
 
@@ -124,7 +125,7 @@ class BarkKeyboardService : InputMethodService() {
         startActivity(
             Intent(this, PermissionBridgeActivity::class.java).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
+            },
         )
 
         return permissionResult.receive()
@@ -135,7 +136,7 @@ class BarkKeyboardService : InputMethodService() {
             audioCapture.isActive -> {
                 Log.d(TAG, "manual stop")
                 audioCapture.stop()
-                updateUi(State.Transcribing)
+                markTranscribing()
             }
             currentJob?.isCompleted == false -> {
                 Log.d(TAG, "tap ignored — flow in progress")
@@ -175,7 +176,8 @@ class BarkKeyboardService : InputMethodService() {
         try {
             text = audioCapture.recordOnce(
                 configJson = configJson,
-                onLevel = { level -> onAudioLevel(level) },
+                onLevel = audioVisualizer::setLevel,
+                onTranscribing = { markTranscribing() },
             )
         } catch (_: CancellationException) {
             return
@@ -226,6 +228,20 @@ class BarkKeyboardService : InputMethodService() {
 
         val pre = JSONObject().apply {
             put("vad", vad)
+            if (prefs.getBoolean(PREF_AGC, false)) {
+                put(
+                    "agc",
+                    JSONObject().apply {
+                        put("target_db", -20.0)
+                        put("max_gain_db", 12.0)
+                        put("attack_ms", 30.0)
+                        put("release_ms", 250.0)
+                        put("rms_window_ms", 80.0)
+                        put("long_window_ms", 1500.0)
+                        put("high_pass_hz", 80.0)
+                    },
+                )
+            }
         }
 
         return JSONObject().apply {
@@ -235,78 +251,16 @@ class BarkKeyboardService : InputMethodService() {
     }
 
     private fun commitText(text: String) {
-        val ic = currentInputConnection ?: return
-        ic.commitText(text, 1)
+        val inputConnection = currentInputConnection ?: return
+        inputConnection.commitText(text, 1)
         Log.d(TAG, "committed: \"$text\"")
     }
 
-    private fun onAudioLevel(raw: Float) {
-        smoothedLevel = smoothedLevel * (1f - levelSmoothing) + raw * levelSmoothing
-        val display = smoothedLevel
+    private fun currentAppearanceSignature(): String =
+        Appearance.dynamicColors(this).toString()
 
-        levelIndicator.post {
-            if (levelIndicator.visibility != View.VISIBLE) return@post
-            val boosted = kotlin.math.sqrt(kotlin.math.sqrt(display.toDouble())).toFloat()
-            val s = 0.7f + boosted * 2.8f
-            levelIndicator.scaleX = s
-            levelIndicator.scaleY = s
-            levelIndicator.alpha = boosted * 0.35f
-        }
-    }
-
-    private fun startLevelAnimation() {
-        smoothedLevel = 0f
-        levelIndicator.visibility = View.VISIBLE
-        levelIndicator.scaleX = 0.7f
-        levelIndicator.scaleY = 0.7f
-        levelIndicator.alpha = 0f
-
-        levelAnimJob?.cancel()
-        levelAnimJob = scope.launch {
-            while (isActive) {
-                delay(150)
-                if (smoothedLevel < 0.003f) {
-                    levelIndicator.post {
-                        levelIndicator.alpha = 0f
-                        levelIndicator.scaleX = 0.7f
-                        levelIndicator.scaleY = 0.7f
-                    }
-                }
-            }
-        }
-    }
-
-    private fun stopLevelAnimation() {
-        levelAnimJob?.cancel()
-        levelAnimJob = null
-    }
-
-    private fun resetLevelIndicator() {
-        levelIndicator.visibility = View.GONE
-        levelIndicator.scaleX = 0.7f
-        levelIndicator.scaleY = 0.7f
-        levelIndicator.alpha = 0f
-    }
-
-    private fun startSpinner() {
-        micButton.visibility = View.INVISIBLE
-        transcribingIndicator.visibility = View.VISIBLE
-        spinnerAnimator?.cancel()
-
-        val anim = ObjectAnimator.ofFloat(transcribingIndicator, View.ROTATION, 0f, 360f)
-        anim.duration = 1200
-        anim.interpolator = LinearInterpolator()
-        anim.repeatCount = ValueAnimator.INFINITE
-        anim.start()
-        spinnerAnimator = anim
-    }
-
-    private fun stopSpinner() {
-        spinnerAnimator?.cancel()
-        spinnerAnimator = null
-        transcribingIndicator.visibility = View.GONE
-        transcribingIndicator.rotation = 0f
-        micButton.visibility = View.VISIBLE
+    private fun markTranscribing() {
+        scope.launch { updateUi(State.Transcribing) }
     }
 
     private fun launchRecordingFlow() {
@@ -336,49 +290,58 @@ class BarkKeyboardService : InputMethodService() {
         switchToPreviousInputMethod()
     }
 
-    private sealed class State {
-        object Recording : State()
-        object Transcribing : State()
-        data class Error(val message: String) : State()
-        object Idle : State()
-    }
-
     private fun updateUi(state: State) {
-        stopSpinner()
-        stopLevelAnimation()
-        resetLevelIndicator()
+        micButton.animate().cancel()
 
         when (state) {
-            is State.Recording -> {
-                micButton.setImageResource(R.drawable.ic_mic_active)
+            State.Recording -> {
                 micButton.visibility = View.VISIBLE
-                startLevelAnimation()
+                micButton.alpha = 1f
+                micButton.scaleX = 1f
+                micButton.scaleY = 1f
+                micButton.isEnabled = true
+                micButton.setIconResource(R.drawable.ic_mic_active)
+                micButton.contentDescription = getString(R.string.stop_recording)
+                audioVisualizer.visibility = View.VISIBLE
+                audioVisualizer.start()
             }
-
-            is State.Transcribing -> {
-                micButton.setImageResource(R.drawable.ic_mic)
-                startSpinner()
+            State.Transcribing -> {
+                audioVisualizer.visibility = View.VISIBLE
+                audioVisualizer.startTranscribing()
+                micButton.isEnabled = false
+                micButton.animate()
+                    .alpha(0f)
+                    .scaleX(0.72f)
+                    .scaleY(0.72f)
+                    .setDuration(AudioReactiveBlobView.TRANSITION_PEAK_MS)
+                    .setInterpolator(FastOutLinearInInterpolator())
+                    .withEndAction { micButton.visibility = View.INVISIBLE }
+                    .start()
             }
-
             is State.Error -> {
-                micButton.setImageResource(R.drawable.ic_mic)
-                micButton.visibility = View.VISIBLE
+                resetIdleUi()
                 Toast.makeText(this, state.message, Toast.LENGTH_SHORT).show()
             }
-
-            is State.Idle -> {
-                micButton.setImageResource(R.drawable.ic_mic)
-                micButton.visibility = View.VISIBLE
-            }
+            State.Idle -> resetIdleUi()
         }
     }
 
-    private fun openAppPermissions() {
-        startActivity(
-            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                data = Uri.fromParts("package", packageName, null)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-        )
+    private fun resetIdleUi() {
+        audioVisualizer.stop()
+        audioVisualizer.visibility = View.INVISIBLE
+        micButton.visibility = View.VISIBLE
+        micButton.alpha = 1f
+        micButton.scaleX = 1f
+        micButton.scaleY = 1f
+        micButton.isEnabled = true
+        micButton.setIconResource(R.drawable.ic_mic)
+        micButton.contentDescription = getString(R.string.start_recording)
+    }
+
+    private sealed class State {
+        data object Recording : State()
+        data object Transcribing : State()
+        data class Error(val message: String) : State()
+        data object Idle : State()
     }
 }

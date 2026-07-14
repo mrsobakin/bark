@@ -1,27 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Two identical gradients stacked. The first provides the base
-     transparent→black fade over 30%. The second is drawn on top,
-     compositing to create a sharper (quadratic) falloff curve:
-     at t=0.3 the effective opacity is ~51% instead of 30%. -->
+<!-- Layered gradients preserve the original soft transparent-to-black fade. -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item>
         <shape>
             <gradient
-                android:startColor="#00000000"
+                android:angle="270"
                 android:centerColor="#FF000000"
-                android:endColor="#FF000000"
                 android:centerY="0.3"
-                android:angle="270" />
+                android:endColor="#FF000000"
+                android:startColor="#00000000" />
         </shape>
     </item>
     <item>
         <shape>
             <gradient
-                android:startColor="#00000000"
+                android:angle="270"
                 android:centerColor="#FF000000"
-                android:endColor="#FF000000"
                 android:centerY="0.3"
-                android:angle="270" />
+                android:endColor="#FF000000"
+                android:startColor="#00000000" />
         </shape>
     </item>
 </layer-list>

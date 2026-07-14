@@ -1,63 +1,44 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:minHeight="195dp"
+    android:minHeight="228dp"
     android:background="@drawable/bg_keyboard"
-    android:clipChildren="false">
+    android:clipChildren="false"
+    android:clipToPadding="false">
 
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
+    <FrameLayout
+        android:layout_width="228dp"
+        android:layout_height="228dp"
         android:layout_gravity="center"
-        android:orientation="vertical"
-        android:gravity="center_horizontal"
-        android:clipChildren="false">
+        android:clipChildren="false"
+        android:clipToPadding="false">
 
-        <FrameLayout
-            android:layout_width="72dp"
-            android:layout_height="72dp"
+        <com.mrsobakin.bark.AudioReactiveBlobView
+            android:id="@+id/audioVisualizer"
+            android:layout_width="228dp"
+            android:layout_height="228dp"
             android:layout_gravity="center"
-            android:clipChildren="false">
+            android:visibility="invisible" />
 
-            <!-- Pulse circle – scales with audio amplitude -->
-            <View
-                android:id="@+id/levelIndicator"
-                android:layout_width="72dp"
-                android:layout_height="72dp"
-                android:layout_gravity="center"
-                android:background="@drawable/bg_pulse"
-                android:visibility="gone" />
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/recordButton"
+            style="?attr/materialIconButtonStyle"
+            android:layout_width="64dp"
+            android:layout_height="64dp"
+            android:layout_gravity="center"
+            android:contentDescription="@string/start_recording"
+            android:minWidth="0dp"
+            android:minHeight="0dp"
+            android:padding="8dp"
+            android:text=""
+            app:cornerRadius="32dp"
+            app:icon="@drawable/ic_mic"
+            app:iconGravity="textStart"
+            app:iconPadding="0dp"
+            app:iconSize="48dp" />
 
-            <!-- Transcribing spinner ring -->
-            <ImageView
-                android:id="@+id/transcribingIndicator"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
-                android:layout_gravity="center"
-                android:src="@drawable/ic_spinner"
-                android:visibility="gone" />
-
-            <FrameLayout
-                android:layout_width="72dp"
-                android:layout_height="72dp"
-                android:clickable="false">
-
-                <ImageButton
-                    android:id="@+id/recordButton"
-                    android:layout_width="64dp"
-                    android:layout_height="64dp"
-                    android:layout_gravity="center"
-                    android:src="@drawable/ic_mic"
-                    android:background="?android:attr/selectableItemBackgroundBorderless"
-                    android:contentDescription="@string/tap_to_record"
-                    android:scaleType="center"
-                    android:importantForAccessibility="yes" />
-
-            </FrameLayout>
-
-        </FrameLayout>
-
-    </LinearLayout>
+    </FrameLayout>
 
 </FrameLayout>

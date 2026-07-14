@@ -34,6 +34,7 @@ class AudioCapture {
         maxDurationSec: Int = 300,
         configJson: String,
         onLevel: ((Float) -> Unit)? = null,
+        onTranscribing: (() -> Unit)? = null,
     ): String? {
         val session = generation.incrementAndGet()
 
@@ -83,6 +84,13 @@ class AudioCapture {
                 }
 
                 if (generation.get() != session) return@withContext null
+
+                active = false
+                runCatching { record.stop() }
+                record.release()
+                record = null
+                onTranscribing?.invoke()
+
                 pipeline.finalize().ifBlank { null }
             } finally {
                 active = false
