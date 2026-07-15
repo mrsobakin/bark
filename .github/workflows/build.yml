@@ -1,6 +1,9 @@
-name: Build
+name: Release
 
-on: [push]
+on:
+  push:
+    tags:
+      - 'v*'
 
 jobs:
   build:
@@ -40,21 +43,11 @@ jobs:
         run: cargo make --profile release apk
 
       - name: Package artifact
-        env:
-          VERSION_SUFFIX: ${{ startsWith(github.ref, 'refs/tags/v') && format('-{0}', github.ref_name) || '' }}
         run: |
           mkdir -p artifacts
-          cp android/app/build/outputs/apk/release/app-release.apk "artifacts/bark${VERSION_SUFFIX}-release.apk"
-
-      - name: Upload artifact
-        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: bark-release
-          path: artifacts/*
+          cp android/app/build/outputs/apk/release/app-release.apk "artifacts/bark-${{ github.ref_name }}-release.apk"
 
       - name: Create release
-        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
         uses: ncipollo/release-action@v1.16.0
         with:
           generateReleaseNotes: true
