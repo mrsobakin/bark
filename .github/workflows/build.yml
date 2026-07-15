@@ -7,7 +7,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     permissions:
       contents: write
     steps:
@@ -42,10 +42,17 @@ jobs:
           SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
         run: cargo make --profile release apk
 
-      - name: Package artifact
+      - name: Build Linux daemon
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes libasound2-dev libopus-dev
+          cargo build --release --locked --package daemon
+
+      - name: Package artifacts
         run: |
           mkdir -p artifacts
           cp android/app/build/outputs/apk/release/app-release.apk "artifacts/bark-${{ github.ref_name }}-release.apk"
+          tar -C target/release -czf "artifacts/barkd-${{ github.ref_name }}-linux-x86_64.tar.gz" barkd
 
       - name: Create release
         uses: ncipollo/release-action@v1.16.0
