@@ -9,6 +9,7 @@
     <string name="start_recording">Start recording</string>
     <string name="stop_recording">Stop recording</string>
     <string name="mic_permission">Microphone permission is required for voice input.</string>
+    <string name="enable_bark_keyboard">Enable Bark as an input method.</string>
     <string name="endpoint_url">API URL</string>
     <string name="endpoint_helper">OpenAI-compatible audio transcription endpoint</string>
     <string name="model">Model</string>

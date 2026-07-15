@@ -1,9 +1,16 @@
 package com.mrsobakin.bark
 
+import android.Manifest
+import android.content.Intent
 import android.content.SharedPreferences
+import android.content.pm.PackageManager
 import android.os.Bundle
+import android.provider.Settings
 import android.view.MenuItem
 import android.view.View
+import android.view.inputmethod.InputMethodManager
+import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.edit
 import androidx.core.net.toUri
@@ -25,9 +32,15 @@ class SettingsActivity : AppCompatActivity() {
     companion object {
         private const val DEFAULT_MODEL = "whisper-large-v3-turbo"
         private const val STATE_POST_PROCESSORS = "postprocessors"
+        private const val STATE_SETUP_STARTED = "setup_started"
     }
 
+    private val microphonePermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { openInputMethodSettingsIfNeeded() }
+
     private lateinit var saveAction: MenuItem
+    private var setupStarted = false
     private var savedSettings: SettingsState? = null
 
     private lateinit var urlLayout: TextInputLayout
@@ -133,14 +146,43 @@ class SettingsActivity : AppCompatActivity() {
         findViewById<MaterialButton>(R.id.addPostprocessor)
             .setOnClickListener { showAddPostprocessorDialog() }
         updateSaveAction()
+
+        setupStarted = savedInstanceState?.getBoolean(STATE_SETUP_STARTED) ?: false
+        if (!setupStarted) {
+            setupStarted = true
+            requestMicrophoneThenEnableKeyboard()
+        }
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
+        outState.putBoolean(STATE_SETUP_STARTED, setupStarted)
         outState.putString(
             STATE_POST_PROCESSORS,
             PipelineSettings.encodePostProcessors(postprocessorAdapter.snapshot()),
         )
         super.onSaveInstanceState(outState)
+    }
+
+    private fun requestMicrophoneThenEnableKeyboard() {
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) ==
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            openInputMethodSettingsIfNeeded()
+        } else {
+            microphonePermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        }
+    }
+
+    private fun openInputMethodSettingsIfNeeded() {
+        val inputMethodManager = getSystemService(InputMethodManager::class.java)
+        val barkService = BarkKeyboardService::class.java.name
+        val enabled = inputMethodManager.enabledInputMethodList.any {
+            it.serviceInfo.packageName == packageName && it.serviceInfo.name == barkService
+        }
+        if (enabled) return
+
+        Toast.makeText(this, R.string.enable_bark_keyboard, Toast.LENGTH_LONG).show()
+        startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS))
     }
 
     private fun saveSettings() {
