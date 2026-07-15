@@ -48,5 +48,7 @@
     <string name="saved">Settings saved</string>
     <string name="invalid_url">Enter an HTTP or HTTPS URL</string>
     <string name="error_no_endpoint">Please set an API URL in settings</string>
+    <string name="open_settings">Open settings</string>
     <string name="error_transcription">Transcription failed</string>
+    <string name="error_transcription_detail">Transcription failed: %1$s</string>
 </resources>

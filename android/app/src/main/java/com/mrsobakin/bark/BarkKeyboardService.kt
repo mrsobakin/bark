@@ -11,7 +11,7 @@ import android.view.ContextThemeWrapper
 import android.view.KeyEvent
 import android.view.View
 import android.view.inputmethod.EditorInfo
-import android.widget.Toast
+import android.widget.TextView
 import androidx.interpolator.view.animation.FastOutLinearInInterpolator
 import com.google.android.material.button.MaterialButton
 import kotlinx.coroutines.CancellationException
@@ -38,6 +38,8 @@ class BarkKeyboardService : InputMethodService() {
 
     private lateinit var micButton: MaterialButton
     private lateinit var audioVisualizer: AudioReactiveBlobView
+    private lateinit var errorPanel: View
+    private lateinit var errorMessage: TextView
 
     private val audioCapture = AudioCapture()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -56,9 +58,19 @@ class BarkKeyboardService : InputMethodService() {
 
         micButton = view.findViewById(R.id.recordButton)
         audioVisualizer = view.findViewById(R.id.audioVisualizer)
+        errorPanel = view.findViewById(R.id.errorPanel)
+        errorMessage = view.findViewById(R.id.errorMessage)
         appearanceSignature = currentAppearanceSignature()
 
         micButton.setOnClickListener { onMicTapped() }
+        view.findViewById<MaterialButton>(R.id.openSettings).setOnClickListener {
+            startActivity(
+                Intent(this, SettingsActivity::class.java).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                },
+            )
+            scheduleSwitchBack()
+        }
 
         window.window?.navigationBarColor = Color.BLACK
         return view
@@ -165,9 +177,6 @@ class BarkKeyboardService : InputMethodService() {
             configJson = buildConfigJson()
         } catch (e: IOException) {
             updateUi(State.Error(e.message ?: getString(R.string.error_no_endpoint)))
-            delay(3000)
-            updateUi(State.Idle)
-            scheduleSwitchBack()
             return
         }
 
@@ -183,12 +192,7 @@ class BarkKeyboardService : InputMethodService() {
             return
         } catch (e: Exception) {
             Log.e(TAG, "recording/transcription failed", e)
-            val className = e::class.simpleName ?: "Exception"
-            val msg = e.message?.let { "$className: $it" } ?: className
-            updateUi(State.Error("${getString(R.string.error_transcription)}: $msg"))
-            delay(3000)
-            updateUi(State.Idle)
-            scheduleSwitchBack()
+            updateUi(State.Error(transcriptionErrorMessage(e)))
             return
         }
 
@@ -200,6 +204,16 @@ class BarkKeyboardService : InputMethodService() {
 
         updateUi(State.Idle)
         scheduleSwitchBack()
+    }
+
+    private fun transcriptionErrorMessage(error: Exception): String {
+        val detail = error.message
+            ?.removePrefix("Finalize failed: ")
+            ?.removePrefix("Transcription failed: ")
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+        return detail?.let { getString(R.string.error_transcription_detail, it) }
+            ?: getString(R.string.error_transcription)
     }
 
     private fun buildConfigJson(): String {
@@ -328,7 +342,9 @@ class BarkKeyboardService : InputMethodService() {
             }
             is State.Error -> {
                 resetIdleUi()
-                Toast.makeText(this, state.message, Toast.LENGTH_SHORT).show()
+                micButton.visibility = View.INVISIBLE
+                errorMessage.text = state.message
+                errorPanel.visibility = View.VISIBLE
             }
             State.Idle -> resetIdleUi()
         }
@@ -337,6 +353,7 @@ class BarkKeyboardService : InputMethodService() {
     private fun resetIdleUi() {
         audioVisualizer.stop()
         audioVisualizer.visibility = View.INVISIBLE
+        errorPanel.visibility = View.GONE
         micButton.visibility = View.VISIBLE
         micButton.alpha = 1f
         micButton.scaleX = 1f
