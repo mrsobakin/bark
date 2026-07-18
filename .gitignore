@@ -1,5 +1,6 @@
 target/
 test_output/
+test_input/
 __pycache__/
 
 # Signing

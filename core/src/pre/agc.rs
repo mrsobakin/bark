@@ -4,7 +4,8 @@ use crate::config::AgcConfig;
 use crate::SAMPLE_RATE;
 
 const MIN_POWER: f32 = 1.0e-12;
-const NOISE_GATE_DB: f32 = -55.0;
+const MIN_LEVEL_DB: f32 = -100.0;
+const MAX_LEVEL_DROP_DB: f32 = 40.0;
 const PEAK_CEILING: f32 = 0.891_250_9; // -1 dBFS
 const MAX_ATTENUATION_DB: f32 = -40.0;
 
@@ -14,7 +15,6 @@ pub struct Agc {
     short_power: f32,
     long_power: f32,
     gain_db: f32,
-    active: bool,
     hp_prev_input: f32,
     hp_prev_output: f32,
 }
@@ -33,26 +33,21 @@ impl Agc {
 
         let dt = 1.0 / SAMPLE_RATE as f32;
         let rc = 1.0 / (2.0 * PI * config.high_pass_hz);
-        let initial_power = db_to_power(config.target_db);
-
         Self {
-            short_power: initial_power,
-            long_power: initial_power,
+            short_power: MIN_POWER,
+            long_power: MIN_POWER,
             config,
             high_pass_alpha: rc / (rc + dt),
             gain_db: 0.0,
-            active: false,
             hp_prev_input: 0.0,
             hp_prev_output: 0.0,
         }
     }
 
     pub fn reset(&mut self) {
-        let initial_power = db_to_power(self.config.target_db);
-        self.short_power = initial_power;
-        self.long_power = initial_power;
+        self.short_power = MIN_POWER;
+        self.long_power = MIN_POWER;
         self.gain_db = 0.0;
-        self.active = false;
         self.hp_prev_input = 0.0;
         self.hp_prev_output = 0.0;
     }
@@ -68,23 +63,17 @@ impl Agc {
             let power = filtered * filtered;
 
             self.short_power = short_alpha * self.short_power + (1.0 - short_alpha) * power;
+            self.long_power = long_alpha * self.long_power + (1.0 - long_alpha) * power;
+
             let short_db = power_to_db(self.short_power);
-            let is_active =
-                power_to_db(power) >= NOISE_GATE_DB || (self.active && short_db >= NOISE_GATE_DB);
-
-            let target_gain_db = if is_active {
-                if !self.active {
-                    self.long_power = self.short_power;
-                }
-                self.long_power = long_alpha * self.long_power + (1.0 - long_alpha) * power;
-                let measured_db = short_db.max(power_to_db(self.long_power));
-                (self.config.target_db - measured_db)
-                    .clamp(MAX_ATTENUATION_DB, self.config.max_gain_db)
-            } else {
-                // Silence must never teach the AGC to amplify the next onset.
-                self.gain_db.min(0.0)
-            };
-
+            let long_db = power_to_db(self.long_power);
+            let target_gain_db =
+                if short_db > MIN_LEVEL_DB && short_db >= long_db - MAX_LEVEL_DROP_DB {
+                    (self.config.target_db - short_db.max(long_db))
+                        .clamp(MAX_ATTENUATION_DB, self.config.max_gain_db)
+                } else {
+                    0.0
+                };
             self.gain_db = smooth_gain(
                 self.gain_db,
                 target_gain_db,
@@ -92,7 +81,6 @@ impl Agc {
                 self.config.release_ms,
                 dt_ms,
             );
-            self.active = is_active;
 
             let requested_gain = db_to_gain(self.gain_db);
             let peak_safe_gain = PEAK_CEILING / filtered.abs().max(1.0e-9);
@@ -138,10 +126,6 @@ fn power_to_db(power: f32) -> f32 {
     10.0 * power.max(MIN_POWER).log10()
 }
 
-fn db_to_power(db: f32) -> f32 {
-    10.0_f32.powf(db / 10.0)
-}
-
 fn db_to_gain(db: f32) -> f32 {
     10.0_f32.powf(db / 20.0)
 }
@@ -171,6 +155,19 @@ mod tests {
 
         assert_eq!(agc.gain_db, 0.0);
         assert!(silence.iter().all(|sample| *sample == 0));
+    }
+
+    #[test]
+    fn quiet_speech_is_amplified() {
+        let input = sine(SAMPLE_RATE as usize, 0.0005);
+        let input_power: i64 = input.iter().map(|&sample| i64::from(sample).pow(2)).sum();
+        let mut output = input.clone();
+        let mut agc = Agc::new(&AgcConfig::default());
+
+        agc.process(&mut output);
+
+        let output_power: i64 = output.iter().map(|&sample| i64::from(sample).pow(2)).sum();
+        assert!(output_power > input_power * 4);
     }
 
     #[test]
