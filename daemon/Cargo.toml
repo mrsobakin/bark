@@ -13,7 +13,18 @@ anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 cpal = "0.15"
 fs2 = "0.4"
-libc = "0.2"
 serde = { version = "1", features = ["derive"] }
-signal-hook = "0.3"
 toml = "0.8"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+signal-hook = "0.3"
+
+[target.'cfg(windows)'.dependencies]
+ctrlc = "3"
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_System_Threading",
+    "Win32_UI_Input_KeyboardAndMouse",
+] }

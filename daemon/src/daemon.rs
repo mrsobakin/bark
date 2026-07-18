@@ -1,26 +1,25 @@
-use std::fs;
-use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 
 use anyhow::Context;
 use bark_core::Bark;
-use signal_hook::consts::signal::{SIGINT, SIGTERM, SIGUSR1};
-use signal_hook::iterator::Signals;
 
-use crate::audio::recorder::{CallbackAction, Recorder, StopReason, Stopper};
+use crate::audio::recorder::{CallbackAction, Recorder, StopReason};
 use crate::config::Config;
 use crate::indicator::{Indicator, State};
 use crate::pidfile::{AcquireResult, PidFile};
 use crate::typer;
 use crate::APP_NAME;
 
+mod control;
+
+pub(crate) use control::toggle;
+use control::SignalState;
+
 pub fn run(config: Config, oneshot: bool) -> anyhow::Result<()> {
     let pidfile_path = config.daemon.pidfile.clone();
 
-    match PidFile::acquire(pidfile_path)? {
-        AcquireResult::AlreadyRunning(pid) => toggle_pid(pid),
+    match PidFile::acquire(pidfile_path.clone())? {
+        AcquireResult::AlreadyRunning => toggle(&pidfile_path),
         AcquireResult::Acquired(_pidfile) => {
             let daemon = Daemon::new(config)?;
             if oneshot {
@@ -32,29 +31,6 @@ pub fn run(config: Config, oneshot: bool) -> anyhow::Result<()> {
     }
 }
 
-pub fn toggle(pidfile: &Path) -> anyhow::Result<()> {
-    let pid = fs::read_to_string(pidfile)
-        .map_err(anyhow::Error::from)
-        .with_context(|| format!("daemon not running (no pidfile: {})", pidfile.display()))?;
-    let pid: libc::pid_t = pid
-        .trim()
-        .parse()
-        .with_context(|| format!("invalid pidfile: {}", pidfile.display()))?;
-    if pid <= 0 {
-        anyhow::bail!("invalid pid in pidfile: {}", pidfile.display());
-    }
-    toggle_pid(pid)
-}
-
-fn toggle_pid(pid: libc::pid_t) -> anyhow::Result<()> {
-    let rc = unsafe { libc::kill(pid, SIGUSR1) };
-    if rc != 0 {
-        Err(std::io::Error::last_os_error()).context("failed to send SIGUSR1")
-    } else {
-        Ok(())
-    }
-}
-
 struct Daemon {
     config: Config,
     signals: SignalState,
@@ -63,7 +39,7 @@ struct Daemon {
 impl Daemon {
     fn new(config: Config) -> anyhow::Result<Self> {
         crate::config::validate_pipeline(&config.pipeline)?;
-        let signals = SignalState::install()?;
+        let signals = SignalState::install(&config.daemon.pidfile)?;
         Ok(Self { config, signals })
     }
 
@@ -93,7 +69,12 @@ impl Daemon {
         eprintln!("{APP_NAME} v{} ready", env!("CARGO_PKG_VERSION"));
         eprintln!("PID      : {}", std::process::id());
         eprintln!("Indicator: {}", indicator_path.display());
-        eprintln!("Typer    : {}", self.config.daemon.typer.join(" "));
+        let typer = if self.config.daemon.typer.is_empty() {
+            "native".to_owned()
+        } else {
+            self.config.daemon.typer.join(" ")
+        };
+        eprintln!("Typer    : {typer}");
         eprintln!("Model    : {}", self.config.pipeline.engine.model);
         eprintln!(
             "Language : {}",
@@ -182,97 +163,5 @@ impl Daemon {
 
         eprintln!("Final transcription: {text:?}");
         typer::type_text(&self.config.daemon.typer, text)
-    }
-}
-
-enum ControlEvent {
-    Toggle,
-    Shutdown,
-}
-
-struct SignalState {
-    shutdown: Arc<AtomicBool>,
-    stopper: Arc<Mutex<Option<Stopper>>>,
-    rx: Receiver<ControlEvent>,
-}
-
-impl SignalState {
-    fn install() -> anyhow::Result<Self> {
-        let (tx, rx) = channel();
-        let state = Self {
-            shutdown: Arc::new(AtomicBool::new(false)),
-            stopper: Arc::new(Mutex::new(None)),
-            rx,
-        };
-        let thread_state = SignalThreadState {
-            shutdown: state.shutdown.clone(),
-            stopper: state.stopper.clone(),
-            tx,
-        };
-
-        let mut signals = Signals::new([SIGUSR1, SIGINT, SIGTERM])?;
-        std::thread::spawn(move || {
-            for signal in signals.forever() {
-                match signal {
-                    SIGUSR1 => {
-                        if let Some(stopper) = thread_state.current_stopper() {
-                            stopper.stop();
-                        } else if thread_state.tx.send(ControlEvent::Toggle).is_err() {
-                            break;
-                        }
-                    }
-                    SIGINT | SIGTERM => {
-                        thread_state.shutdown.store(true, Ordering::SeqCst);
-                        if let Some(stopper) = thread_state.current_stopper() {
-                            stopper.stop();
-                        }
-                        let _ = thread_state.tx.send(ControlEvent::Shutdown);
-                        break;
-                    }
-                    _ => {}
-                }
-            }
-        });
-
-        Ok(state)
-    }
-
-    fn shutdown(&self) -> bool {
-        self.shutdown.load(Ordering::SeqCst)
-    }
-
-    fn install_stopper(&self, stopper: Stopper) -> bool {
-        let mut current = self.stopper.lock().unwrap();
-        *current = Some(stopper);
-
-        if self.shutdown() {
-            current.take().unwrap().stop();
-            false
-        } else {
-            true
-        }
-    }
-
-    fn set_stopper(&self, stopper: Option<Stopper>) {
-        *self.stopper.lock().unwrap() = stopper;
-    }
-
-    fn wait_for_toggle(&self) -> anyhow::Result<bool> {
-        match self.rx.recv().context("signal thread exited")? {
-            ControlEvent::Toggle => Ok(true),
-            ControlEvent::Shutdown => Ok(false),
-        }
-    }
-}
-
-struct SignalThreadState {
-    shutdown: Arc<AtomicBool>,
-    stopper: Arc<Mutex<Option<Stopper>>>,
-    tx: Sender<ControlEvent>,
-}
-
-impl SignalThreadState {
-    fn current_stopper(&self) -> Option<Stopper> {
-        self.stopper.lock().unwrap().clone()
     }
 }

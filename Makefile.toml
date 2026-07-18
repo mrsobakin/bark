@@ -29,8 +29,7 @@ cargo install cargo-ndk --locked
 '''
 
 [tasks.jni]
-# Cmake fixes for building opus
-env = { ANDROID_NDK = "${ANDROID_NDK_HOME}", CMAKE_POLICY_VERSION_MINIMUM = "3.5" }
+env = { ANDROID_NDK = "${ANDROID_NDK_HOME}" }
 script = '''
 cargo ndk \
     -t "${ANDROID_ABI}" -P "${ANDROID_PLATFORM}" -o "${JNI_LIBS_DIR}" \

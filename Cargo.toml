@@ -5,6 +5,13 @@ resolver = "2"
 [profile.release]
 strip = true
 
+# audiopus_sys builds its bundled C library with CMake. A Debug CMake build
+# links the debug MSVC runtime, while Rust's dev profile links the release
+# runtime. Build just this native dependency as release-compatible in dev.
+[profile.dev.package.audiopus_sys]
+opt-level = 1
+debug = false
+
 [workspace.package]
 version = "1.1.0"
 edition = "2021"

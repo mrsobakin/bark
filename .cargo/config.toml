@@ -1,0 +1,4 @@
+[env]
+# Bundled Opus currently declares compatibility with CMake versions older than
+# CMake 4 accepts by default. Preserve the policies it was written against.
+CMAKE_POLICY_VERSION_MINIMUM = { value = "3.5", force = false }

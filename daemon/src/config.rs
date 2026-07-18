@@ -8,10 +8,16 @@ use serde::Deserialize;
 
 use crate::APP_NAME;
 
+#[cfg(unix)]
 fn default_runtime_dir() -> PathBuf {
     std::env::var_os("XDG_RUNTIME_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("/tmp"))
+}
+
+#[cfg(windows)]
+fn default_runtime_dir() -> PathBuf {
+    std::env::temp_dir().join(APP_NAME)
 }
 
 #[derive(Clone)]
@@ -57,6 +63,7 @@ impl TryFrom<RawDaemonConfig> for DaemonConfig {
     type Error = anyhow::Error;
 
     fn try_from(raw: RawDaemonConfig) -> anyhow::Result<Self> {
+        #[cfg(not(windows))]
         if raw.typer.is_empty() {
             bail!("daemon.typer must not be empty");
         }
@@ -176,5 +183,14 @@ threshold = 0.5
         assert!(cfg.pipeline.pre.agc.is_some());
         assert!(cfg.pipeline.pre.vad.is_some());
         assert!(cfg.daemon.pidfile.ends_with(format!("{APP_NAME}.pid")));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_defaults_to_native_typer_and_temp_runtime_dir() {
+        let cfg = DaemonConfig::try_from(RawDaemonConfig::default()).unwrap();
+
+        assert!(cfg.typer.is_empty());
+        assert!(cfg.pidfile.starts_with(std::env::temp_dir().join(APP_NAME)));
     }
 }

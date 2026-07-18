@@ -13,10 +13,24 @@ use transcribe::TranscribeArgs;
 
 const APP_NAME: &str = "barkd";
 
+#[cfg(unix)]
 fn default_config_path() -> PathBuf {
     let config_home = std::env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))
+        .unwrap_or_else(|| PathBuf::from("."));
+
+    config_home.join(APP_NAME).join("config.toml")
+}
+
+#[cfg(windows)]
+fn default_config_path() -> PathBuf {
+    let config_home = std::env::var_os("APPDATA")
+        .map(PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("USERPROFILE")
+                .map(|home| PathBuf::from(home).join("AppData").join("Roaming"))
+        })
         .unwrap_or_else(|| PathBuf::from("."));
 
     config_home.join(APP_NAME).join("config.toml")

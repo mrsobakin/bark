@@ -2,7 +2,9 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::Context;
 use bark_core::{Bark, Preprocessor};
+#[cfg(unix)]
 use signal_hook::consts::signal::{SIGINT, SIGTERM};
+#[cfg(unix)]
 use signal_hook::iterator::Signals;
 
 use crate::audio::playback;
@@ -114,6 +116,7 @@ fn run_transcribe(config: Config, recorder: Recorder, type_it: bool) -> anyhow::
 struct StopSignals;
 
 impl StopSignals {
+    #[cfg(unix)]
     fn install(stopper: Stopper) -> anyhow::Result<Self> {
         let mut signals = Signals::new([SIGINT, SIGTERM])?;
         std::thread::spawn(move || {
@@ -121,6 +124,12 @@ impl StopSignals {
                 stopper.stop();
             }
         });
+        Ok(Self)
+    }
+
+    #[cfg(windows)]
+    fn install(stopper: Stopper) -> anyhow::Result<Self> {
+        ctrlc::set_handler(move || stopper.stop()).context("failed to install Ctrl+C handler")?;
         Ok(Self)
     }
 }
