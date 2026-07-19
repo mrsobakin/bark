@@ -8,7 +8,7 @@ name = "barkd"
 path = "src/main.rs"
 
 [dependencies]
-bark-core = { workspace = true }
+bark-core = { workspace = true, features = ["resampler"] }
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 cpal = "0.15"

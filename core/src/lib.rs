@@ -28,6 +28,8 @@ pub enum BarkError {
 
 pub type Result<T> = std::result::Result<T, BarkError>;
 
+#[cfg(feature = "resampler")]
+pub use audio::Resampler;
 pub use bark::*;
 pub use config::*;
 pub use engine::*;

@@ -1,6 +1,10 @@
 mod opus;
+#[cfg(feature = "resampler")]
+mod resampler;
 
 pub use opus::OpusEncoder;
+#[cfg(feature = "resampler")]
+pub use resampler::Resampler;
 use thiserror::Error;
 
 #[derive(Debug, Error)]

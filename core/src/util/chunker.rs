@@ -25,6 +25,12 @@ pub struct Chunker<T: Default + Copy, const N: usize> {
     len: usize,
 }
 
+impl<T: Default + Copy, const N: usize> Default for Chunker<T, N> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T: Default + Copy, const N: usize> Chunker<T, N> {
     pub fn new() -> Self {
         Self {
