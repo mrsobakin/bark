@@ -1,0 +1,120 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes libasound2-dev libopus-dev
+
+      - name: Build Linux daemon
+        run: cargo build --release --locked --package daemon
+
+      - name: Package Linux daemon
+        run: tar -C target/release -czf "barkd-${{ github.ref_name }}-linux-x86_64.tar.gz" barkd
+
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: barkd-${{ github.ref_name }}-linux-x86_64.tar.gz
+          if-no-files-found: error
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build Windows daemon
+        run: cargo build --release --locked --package daemon
+
+      - name: Package Windows daemon
+        shell: pwsh
+        run: Compress-Archive -Path target/release/barkd.exe -DestinationPath "barkd-${{ github.ref_name }}-windows-x86_64.zip"
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: barkd-${{ github.ref_name }}-windows-x86_64.zip
+          if-no-files-found: error
+
+  build-android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Android build tools
+        run: |
+          cargo install cargo-make --locked
+          cargo make sdk
+
+      - name: Restore signing key
+        env:
+          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
+        run: |
+          test -n "$SIGNING_KEY"
+          printf '%s' "$SIGNING_KEY" | base64 --decode > signing-key.jks
+
+      - name: Build signed APK
+        env:
+          SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
+        run: cargo make --profile release apk
+
+      - name: Package APK
+        run: cp android/app/build/outputs/apk/release/app-release.apk "bark-${{ github.ref_name }}-release.apk"
+
+      - name: Upload Android artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: bark-${{ github.ref_name }}-release.apk
+          if-no-files-found: error
+
+  release:
+    needs:
+      - build-linux
+      - build-windows
+      - build-android
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create release
+        uses: ncipollo/release-action@v1.16.0
+        with:
+          generateReleaseNotes: true
+          artifacts: artifacts/*
