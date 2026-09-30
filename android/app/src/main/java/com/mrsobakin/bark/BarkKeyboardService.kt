@@ -25,6 +25,7 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.yield
 import org.json.JSONObject
 import java.io.IOException
 
@@ -45,10 +46,13 @@ class BarkKeyboardService : InputMethodService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     private var currentJob: Job? = null
+    private var finishInputJob: Job? = null
+    private var editorTarget: EditorTarget? = null
     private var inputViewActive = false
     private var restartPending = false
     private var switchBackPending = false
     private var appearanceSignature = ""
+    private var state: State = State.Idle
 
     @SuppressLint("InflateParams")
     @Suppress("DEPRECATION")
@@ -76,6 +80,21 @@ class BarkKeyboardService : InputMethodService() {
         return view
     }
 
+    override fun onStartInput(info: EditorInfo?, restarting: Boolean) {
+        super.onStartInput(info, restarting)
+        val target = info?.let { EditorTarget(it.packageName, it.fieldId, it.fieldName, it.inputType) }
+        Log.d(TAG, "onStartInput restarting=$restarting target=$target")
+        finishInputJob?.cancel()
+        finishInputJob = null
+        if (editorTarget != null && editorTarget != target) {
+            restartPending = false
+            abortWithDiscard()
+        } else if (currentJob?.isActive == true) {
+            Log.d(TAG, "preserving flow for the same editor")
+        }
+        editorTarget = target
+    }
+
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
         Log.d(TAG, "onStartInputView restarting=$restarting")
@@ -84,26 +103,39 @@ class BarkKeyboardService : InputMethodService() {
         }
         inputViewActive = true
         switchBackPending = true
-        updateUi(State.Idle)
-        launchRecordingFlow()
+        val job = currentJob
+        if (job != null && !job.isCompleted && !job.isCancelled) {
+            // The notification shade can hide and restore the view without ending input.
+            updateUi(state)
+        } else {
+            updateUi(State.Idle)
+            launchRecordingFlow()
+        }
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {
         super.onFinishInputView(finishingInput)
         Log.d(TAG, "onFinishInputView finishingInput=$finishingInput")
         inputViewActive = false
-        restartPending = false
         audioVisualizer.stop()
-        abortWithDiscard()
+        // Even finishingInput=true can be followed immediately by a restart in the
+        // same editor when the notification shade closes. onFinishInput handles it.
     }
 
     override fun onFinishInput() {
         super.onFinishInput()
         Log.d(TAG, "onFinishInput")
         inputViewActive = false
-        restartPending = false
         if (::audioVisualizer.isInitialized) audioVisualizer.stop()
-        abortWithDiscard()
+        finishInputJob?.cancel()
+        finishInputJob = scope.launch {
+            // Let Android finish its synchronous finish/start callback sequence.
+            // onStartInput cancels this cleanup when the same editor reconnects.
+            yield()
+            restartPending = false
+            editorTarget = null
+            abortWithDiscard()
+        }
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
@@ -185,7 +217,7 @@ class BarkKeyboardService : InputMethodService() {
         try {
             text = audioCapture.recordOnce(
                 configJson = configJson,
-                onLevel = audioVisualizer::setLevel,
+                onLevel = { audioVisualizer.setLevel(it) },
                 onTranscribing = { markTranscribing() },
             )
         } catch (_: CancellationException) {
@@ -302,6 +334,7 @@ class BarkKeyboardService : InputMethodService() {
     }
 
     private fun abortWithDiscard() {
+        Log.d(TAG, "discarding recording flow")
         currentJob?.cancel()
         audioCapture.cancel()
     }
@@ -313,6 +346,7 @@ class BarkKeyboardService : InputMethodService() {
     }
 
     private fun updateUi(state: State) {
+        this.state = state
         micButton.animate().cancel()
 
         when (state) {
@@ -369,4 +403,11 @@ class BarkKeyboardService : InputMethodService() {
         data class Error(val message: String) : State()
         data object Idle : State()
     }
+
+    private data class EditorTarget(
+        val packageName: String?,
+        val fieldId: Int,
+        val fieldName: String?,
+        val inputType: Int,
+    )
 }
